@@ -33,8 +33,10 @@ function is_boolean(o) { return Array.isArray(o) && (tag(o) === boolean_tag) }
 function make_boolean(b) { return ( b === true ? o_true  : o_false ) }
 
 // STRINGS
-function is_string(o)     { return Array.isArray(o) && (tag(o) === string_tag) }
-function make_string(str) { return [string_tag, str] }
+function is_string(o)      { return Array.isArray(o) && (tag(o) === string_tag) }
+function make_string(str)  { return [string_tag, str] }
+function string_string(o)  { return o[1] }
+
 
 // SYMBOLS
 
@@ -269,6 +271,8 @@ function peek_char(sp) {
         return s[i]
     }       
 }
+
+
 function back_char(sp) {
     let i = string_port_pos(sp)
     if (i == 0)
@@ -303,6 +307,7 @@ function lex(sp) {
     else if (is_digit(c)) { return lex_number(sp) }
     else if (c == "(")    { read_char(sp) ; return LPAREN }
     else if (c == ")")    { read_char(sp) ; return RPAREN }
+    else if (c == "\"")   { return lex_string(sp) }
     else if (c == "+") {
         read_char(sp)
         if (is_digit(peek_char(sp))) {
@@ -403,6 +408,28 @@ function lex_symbol(sp) {
     }
     return sym(cs.join(""))
 }
+
+function lex_string(sp) {
+    let c  = read_char(sp) // the "
+    let cs = []
+    let i  = 0
+    while (true) {
+        let c = read_char(sp)
+        if (c === "\\") {
+            let p = peek_char(sp)
+            if      (p === "t")  { read_char(sp); cs[i++] = "\t" }
+            else if (p === "n" ) { read_char(sp); cs[i++] = "\n" }
+            else if (p === "\\") { read_char(sp); cs[i++] = "\\" }
+            else if (p === EOF)  { throw new Error("read: end-of-file object occurred while reading a string") }
+            else                 { read_char(sp); cs[i++] = p    }
+        } else if (c === "\"") {
+            return make_string(cs.join(""))
+        } else {
+            cs[i++] = c
+        }
+    }
+}
+
 
 function reverse(o) {
     let r = o_null
@@ -859,4 +886,6 @@ console.log( core_eval(o_car(parse_tokens(read_from_string(
     "(begin \
         (define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) \
         (fact 5))")))))
+
+console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
 

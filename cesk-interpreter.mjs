@@ -12,18 +12,19 @@
 // Any value would work.
 // The choice below prints nicely.
 
-const symbol_tag      = ["symbol"] 
-const number_tag      = ["number"] 
-const boolean_tag     = ["boolean"] 
-const string_tag      = ["string"]
-const pair_tag        = ["pair"]
-const closure_tag     = ["closure"]
-const primitive_tag   = ["primitive"]
-const string_port_tag = ["string_port"]
+const symbol_tag       = ["symbol"] 
+const number_tag       = ["number"] 
+const boolean_tag      = ["boolean"] 
+const string_tag       = ["string"]
+const pair_tag         = ["pair"]
+const closure_tag      = ["closure"]
+const primitive_tag    = ["primitive"]
+const string_port_tag  = ["string_port"]
+const continuation_tag = ["continuation"]
 
 const null_tag        = ["null"]       // These names are useful for debugging,
 const void_tag        = ["void"]       // although they could be made singletons.
-const singleton_tag   = ["singleton"]  // o_apply
+const singleton_tag   = ["singleton"]  // o_apply, o_callcc
 
 function tag(o) { return o[0] }
 
@@ -99,7 +100,14 @@ function o_length(xs) {
     return make_number(js_list_length(xs))
 }
 
-
+function is_list(xs) {
+    if (xs === o_null)
+        return true
+    while (is_pair(xs)) {
+        xs = o_cdr(xs)
+    }
+    return (xs === o_null)
+}
 
 function array_to_list(axs) {
     let n = axs.length
@@ -133,7 +141,8 @@ function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) 
 
 // SINGLETONS
 
-const o_apply = [singleton_tag]
+const o_apply  = [singleton_tag]
+const o_callcc = [singleton_tag]
 
 
 // CLOSURES
@@ -144,6 +153,10 @@ function make_closure(e, env) {
 }
 function closure_e(o)   { return o[1] }
 function closure_env(o) { return o[2] }
+
+// CONTINUATIONS
+function is_continuation(o) { return Array.isArray(o) && (tag(o) === continuation_tag) }
+function continuation_k(o)  { return o[1] }
 
 // PRIMITIVES
 function is_primitive(o) { return Array.isArray(o) && (tag(o) === primitive_tag) }
@@ -205,7 +218,22 @@ function panic(msg) {
 function read_error(msg) {
     throw new Error(msg)
 }
-    
+
+function error_arity(name, args) {
+    console.log(name + ": arity mismatch")
+    console.log("   " + args)
+    throw new Error("^^^^")
+}
+
+function error_arg(name, argument_name, arg) {
+    console.log(name + ": ")
+    console.log("   expected:" + argument_name)
+    console.log("   given:"    + arg)
+    throw new Error("^^^^")
+}
+
+
+
 
 // JAVASCRIPT TYPES
 function is_js_number(o) {
@@ -694,21 +722,31 @@ function continue_step(s) {
                 rev_vals = o_cdr(rev_vals)
             }
             let rator = o_car(args)
-            args = o_cdr(args)  
+            args = o_cdr(args)
+            count--
             while (true) { // loop in case of apply
                 // console.log("continue")
-                console.log(rator)
+                // console.log(rator)
                 let rator_tag = tag(rator)
                 if (rator === o_apply) {
                     // (apply rator args)
                     // todo: check arity
+                    if (!(js_list_length(args)==2))
+                        error_arity("apply", args)                    
                     rator = o_car(args)
                     args  = o_car(o_cdr(args))
                     count = js_list_length(args)
+                    if (!is_list(args))
+                        error_arg("apply", "list", args)                        
                     // todo: check that args is a list
                     // no break => we loop and handle the new rator and args
+                } else if (rator === o_callcc) {
+                    if (!(count == 1))
+                        error_arity("callcc", args)
+                    rator = o_car(args)
+                    args  = o_cons([continuation_tag, cont_next(state_k(s))], o_null)
+                    // no break => loop to call the callcc argument with the continuation
                 } else if (rator_tag === primitive_tag) {
-                    console.log("primitive")
                     let f = rator
                     let dispatcher = primitive_dispatcher(f)
                     let proc       = primitive_proc(f)
@@ -734,10 +772,16 @@ function continue_step(s) {
                         fail_arity(rator, all_args)
                     }                       
                     return [body,cenv,state_mem(s),cont_next(k)]
+                } else if (rator_tag === continuation_tag) {
+                    let k   = continuation_k(rator)
+                    let arg = o_car(args)
+                    return [o_cons(quote_symbol, o_cons(arg, o_null)), 
+                            state_env(s), state_mem(s), k]
                 } else {
-		    // todo: throw an interpreter exception
-		    console.log(rator)
-		    throw new Error("unhandled application operator")
+                    // todo: throw an interpreter exception
+                    console.log("------")
+                    console.log(rator)
+                    throw new Error("unhandled application operator")
                 }
             }
         }	
@@ -907,6 +951,9 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
 let expr27 = o_car(parse_tokens(read_from_string("(apply + (cons 1 (cons 2 null)))")))
+let expr28 = o_car(parse_tokens(read_from_string("(call/cc (lambda (x) x))")))            // => some continuation
+let expr29 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (k 42)))")))       // => 42
+let expr30 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (+ 1 (k 42))))"))) // => 42
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
@@ -916,15 +963,16 @@ let exprs_all = [exprs1,exprs2,exprs3]
 // console.log(top_env)
 
 let initial_env = make_empty_env()
-initial_env = extend_env(initial_env, sym("cons"),  register_primitive("cons",  o_cons,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("car"),   register_primitive("car",   o_car,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("cdr"),   register_primitive("cdr",   o_cdr,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("+"),     register_primitive("+",     o_plus,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("-"),     register_primitive("-",     o_minus,   dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("*"),     register_primitive("*",     o_mult,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("zero?"), register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("apply"), o_apply)
-initial_env = extend_env(initial_env, sym("null"),  o_null)
+initial_env = extend_env(initial_env, sym("cons"),    register_primitive("cons",  o_cons,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("car"),     register_primitive("car",   o_car,     dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("cdr"),     register_primitive("cdr",   o_cdr,     dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("+"),       register_primitive("+",     o_plus,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("-"),       register_primitive("-",     o_minus,   dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("*"),       register_primitive("*",     o_mult,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("zero?"),   register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("apply"),   o_apply)
+initial_env = extend_env(initial_env, sym("call/cc"), o_callcc)
+initial_env = extend_env(initial_env, sym("null"),    o_null)
 
 // console.log(lookup(top_env, sym("cons")))
 
@@ -944,4 +992,4 @@ initial_env = extend_env(initial_env, sym("null"),  o_null)
 
 // console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
 
-console.log( core_eval(expr27) )
+console.log( core_eval(expr30) )

@@ -17,11 +17,13 @@ const number_tag      = ["number"]
 const boolean_tag     = ["boolean"] 
 const string_tag      = ["string"]
 const pair_tag        = ["pair"]
-const null_tag        = ["null"]
 const closure_tag     = ["closure"]
 const primitive_tag   = ["primitive"]
-const void_tag        = ["void"]
 const string_port_tag = ["string_port"]
+
+const null_tag        = ["null"]       // These names are useful for debugging,
+const void_tag        = ["void"]       // although they could be made singletons.
+const singleton_tag   = ["singleton"]  // o_apply
 
 function tag(o) { return o[0] }
 
@@ -84,7 +86,7 @@ function o_cons(o1,o2) { return [pair_tag, o1, o2] }
 function o_car(o)      { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
 function o_cdr(o)      { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
 
-function o_length(xs) {
+function js_list_length(xs) {
     let n = 0
     while (xs != o_null) {
 	n++
@@ -92,6 +94,12 @@ function o_length(xs) {
     }
     return n
 }
+
+function o_length(xs) {
+    return make_number(js_list_length(xs))
+}
+
+
 
 function array_to_list(axs) {
     let n = axs.length
@@ -103,7 +111,7 @@ function array_to_list(axs) {
 }
 
 function list_to_array(xs) {
-    let n   = o_length(xs)
+    let n   = js_list_length(xs)
     let axs = new Array(n)
     let i = n
     while (!is_null(xs)) {
@@ -122,6 +130,10 @@ function o_plus(o1, o2)  { return make_number(o1[1] + o2[1]) }
 function o_minus(o1, o2) { return make_number(o1[1] - o2[1]) }
 function o_mult(o1, o2)  { return make_number(o1[1] * o2[1]) }
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
+
+// SINGLETONS
+
+const o_apply = [singleton_tag]
 
 
 // CLOSURES
@@ -294,12 +306,38 @@ function skip_whitespace(sp) {
     return c
 }
 
+function skip_comment(sp) {
+    let p = peek_char(sp)
+    if (p == ";") {
+        read_char(sp)
+        p = peek_char(sp)
+        while (!(p=="\n") && !(p===EOF)) {
+            read_char(sp)
+            p = peek_char(sp)
+        }
+        if (p=="\n") 
+            read_char(sp)
+    }
+}
+
+function skip_atmosphere(sp) {
+    let p = peek_char(sp)
+    while (is_whitespace(p) || p == ";") {
+        if (is_whitespace(p))
+            skip_whitespace(sp)
+        else
+            skip_comment(sp)
+        p = peek_char(sp)
+    }
+}
+    
+
 // Tokens
 const LPAREN = Symbol.for("(")
 const RPAREN = Symbol.for(")")
 
 function lex(sp) {
-    skip_whitespace(sp)
+    skip_atmosphere(sp)
     let c = peek_char(sp)
     // console.log("lex")
     // console.log(c)
@@ -656,38 +694,51 @@ function continue_step(s) {
                 rev_vals = o_cdr(rev_vals)
             }
             let rator = o_car(args)
-            let rator_tag = tag(rator)
-            if (rator_tag === primitive_tag) {
-                let f = rator
-                let dispatcher = primitive_dispatcher(f)
-                let proc       = primitive_proc(f)
-                let v = dispatcher(proc,o_cdr(args))
-                return [o_cons(quote_symbol, o_cons(v, o_null)),
-                        state_env(s),state_mem(s),cont_next(k)]
-            } else if (rator_tag === closure_tag) {
-                let all_args = args
-                let ce       = closure_e(rator)         // (lambda formals body)
-                let cenv     = closure_env(rator)
-                let formals  = o_car(o_cdr(ce))         // id or (id ...) or (id ... . more)
-                let body     = o_car(o_cdr(o_cdr(ce)))
+            args = o_cdr(args)  
+            while (true) { // loop in case of apply
+                // console.log("continue")
+                console.log(rator)
+                let rator_tag = tag(rator)
+                if (rator === o_apply) {
+                    // (apply rator args)
+                    // todo: check arity
+                    rator = o_car(args)
+                    args  = o_car(o_cdr(args))
+                    count = js_list_length(args)
+                    // todo: check that args is a list
+                    // no break => we loop and handle the new rator and args
+                } else if (rator_tag === primitive_tag) {
+                    console.log("primitive")
+                    let f = rator
+                    let dispatcher = primitive_dispatcher(f)
+                    let proc       = primitive_proc(f)
+                    let v = dispatcher(proc,args)
+                    return [o_cons(quote_symbol, o_cons(v, o_null)),
+                            state_env(s),state_mem(s),cont_next(k)]
+                } else if (rator_tag === closure_tag) {
+                    let all_args = args
+                    let ce       = closure_e(rator)         // (lambda formals body)
+                    let cenv     = closure_env(rator)
+                    let formals  = o_car(o_cdr(ce))         // id or (id ...) or (id ... . more)
+                    let body     = o_car(o_cdr(o_cdr(ce)))
 
-                args = o_cdr(args) // skip lambda
-                while (is_pair(formals)) {
-                    // if (is_null(args)) { break }
-                    cenv    = extend_env(cenv, o_car(formals), o_car(args))
-                    args    = o_cdr(args)
-                    formals = o_cdr(formals)
+                    while (is_pair(formals)) {
+                        // if (is_null(args)) { break }
+                        cenv    = extend_env(cenv, o_car(formals), o_car(args))
+                        args    = o_cdr(args)
+                        formals = o_cdr(formals)
+                    }
+                    if (is_symbol(formals)) {
+                        cenv = extend_env(cenv, formals, args)
+                    } else if ( (!is_null(formals)) || (!is_null(args)) ) {
+                        fail_arity(rator, all_args)
+                    }                       
+                    return [body,cenv,state_mem(s),cont_next(k)]
+                } else {
+		    // todo: throw an interpreter exception
+		    console.log(rator)
+		    throw new Error("unhandled application operator")
                 }
-                if (is_symbol(formals)) {
-                    cenv = extend_env(cenv, formals, args)
-                } else if ( (!is_null(formals)) || (!is_null(args)) ) {
-                    fail_arity(rator, all_args)
-                }                       
-                return [body,cenv,state_mem(s),cont_next(k)]                
-            } else {
-		// todo: throw an interpreter exception
-		console.log(rator)
-		throw new Error("unhandled application operator")
             }
         }	
     } else if (t === if_k) {
@@ -764,7 +815,7 @@ function test_null_and_pairs() {
     let t3 = is_pair(o_cons(o_true,o_false))
     let t4 = o_car(o_cons(o_true,o_false)) == o_true
     let t5 = o_cdr(o_cons(o_true,o_false)) == o_false
-    let t6 = o_length(array_to_list([11,22,33])) == 3
+    let t6 = js_list_length(array_to_list([11,22,33])) == 3
     let a7 = list_to_array(array_to_list([11,22,33]))
     let t7 = (a7[0] == 11) && (a7[1] == 22) && (a7[2] == 33)
     // console.log([t1,t2,t3,t4,t5,t6,t7])
@@ -855,6 +906,7 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    1,
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
+let expr27 = o_car(parse_tokens(read_from_string("(apply + (cons 1 (cons 2 null)))")))
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
@@ -871,6 +923,8 @@ initial_env = extend_env(initial_env, sym("+"),     register_primitive("+",     
 initial_env = extend_env(initial_env, sym("-"),     register_primitive("-",     o_minus,   dispatch2, 1<<2))
 initial_env = extend_env(initial_env, sym("*"),     register_primitive("*",     o_mult,    dispatch2, 1<<2))
 initial_env = extend_env(initial_env, sym("zero?"), register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("apply"), o_apply)
+initial_env = extend_env(initial_env, sym("null"),  o_null)
 
 // console.log(lookup(top_env, sym("cons")))
 
@@ -882,10 +936,12 @@ initial_env = extend_env(initial_env, sym("zero?"), register_primitive("zero?", 
 
 // console.log( core_eval(o_car(parse_tokens(read_from_string( "(+ (+ 1 2) (+ 10 20))")))))
 
-console.log( core_eval(o_car(parse_tokens(read_from_string( 
-    "(begin \
-        (define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) \
-        (fact 5))")))))
+//console.log( core_eval(o_car(parse_tokens(read_from_string( 
+//    "(begin ; this is a comment \n \
+//            ; another comment \n \
+//        (define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) \
+//        (fact 5))")))))
 
-console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
+// console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
 
+console.log( core_eval(expr27) )

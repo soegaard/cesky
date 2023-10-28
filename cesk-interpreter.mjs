@@ -21,6 +21,7 @@ const closure_tag      = ["closure"]
 const primitive_tag    = ["primitive"]
 const string_port_tag  = ["string_port"]
 const continuation_tag = ["continuation"]
+const hash_tag         = ["hash"]
 
 const null_tag        = ["null"]       // These names are useful for debugging,
 const void_tag        = ["void"]       // although they could be made singletons.
@@ -52,27 +53,32 @@ function sym(str) {
     return (is_symbol(interned) ? interned : make_symbol(str))
 }
 function make_symbol(str) {
-    let val = [symbol_tag, str]
+    let key = Symbol(str)            // used as keys in hash tables
+    let val = [symbol_tag, str, key]
     symbol_table[str] = val
     return val
 }
 function make_uninterned_symbol(str) {
-    return [symbol_tag, str]
+    let key = Symbol(str)            // used as keys in hash tables
+    return [symbol_tag, str, key]
 }
+
 function o_symbol_to_string(o) {
     return make_string(o[1])
 }
-function symbol_string(o) {
-    return o[1]
-}
+function symbol_string(o) { return o[1] }
+function symbol_key(o)    { return o[2] }
 
-const begin_symbol  = sym("begin")
-const define_symbol = sym("define")
-const if_symbol     = sym("if")
-const lambda_symbol = sym("lambda")
-const let_symbol    = sym("let")
-const let1_symbol   = sym("let1")
-const quote_symbol  = sym("quote")
+const begin_symbol            = sym("begin")
+const define_symbol           = sym("define")
+const if_symbol               = sym("if")
+const lambda_symbol           = sym("lambda")
+const let_symbol              = sym("let")
+const let1_symbol             = sym("let1")
+const quote_symbol            = sym("quote")
+const quasiquote_symbol       = sym("quasiquote")
+const unquote_symbol          = sym("unquote")
+const unquote_splicing_symbol = sym("unquote-splicing")
 
 // VOID
 const o_void = [void_tag]
@@ -86,6 +92,8 @@ function is_pair(o)    { return Array.isArray(o) && (tag(o) === pair_tag) }
 function o_cons(o1,o2) { return [pair_tag, o1, o2] }
 function o_car(o)      { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
 function o_cdr(o)      { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
+function o_list(os)    { return os }
+
 
 function js_list_length(xs) {
     let n = 0
@@ -139,11 +147,42 @@ function o_minus(o1, o2) { return make_number(o1[1] - o2[1]) }
 function o_mult(o1, o2)  { return make_number(o1[1] * o2[1]) }
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
 
+// HASH
+function is_hash(o) { return Array.isArray(o) && (tag(o) === hash_tag) }
+function hash_table(o) { return o[1] }
+function make_empty_hash() { return [hash_tag, {}] }
+
+function hash_ref(h, sym, def) {
+    let ht = hash_table(h)
+    let key = symbol_key(sym)
+    let v = ht[key]
+    if (v === undefined) {
+        if (def === undefined) 
+            throw new Error("key not found")
+        return def
+    }
+    return v
+}
+function hash_set(h, sym, val) {
+    let ht = hash_table(h)
+    let key = symbol_key(sym)
+    ht[key] = val
+    return o_void
+}
+function hash_remove(h,sym) {
+    let ht = hash_table(h)
+    let key = symbol_key(sym)
+    delete ht[key]
+    return o_void
+}
+
+
+
 // SINGLETONS
 
-const o_apply  = [singleton_tag]
-const o_callcc = [singleton_tag]
-
+const o_apply       = [singleton_tag]
+const o_callcc      = [singleton_tag]
+const o_call_prompt = [singleton_tag]
 
 // CLOSURES
 function is_closure(o) { return Array.isArray(o) && (tag(o) === closure_tag) }
@@ -198,6 +237,9 @@ function dispatch2(proc, args) {
 }
 function dispatch3(proc, args) {
     return proc(o_car(args), o_car(o_cdr(args)), o_car(o_cdr(o_cdr(args))))
+}
+function dispatchn(proc, args) {
+    return proc(args)
 }
 
 
@@ -312,7 +354,6 @@ function peek_char(sp) {
     }       
 }
 
-
 function back_char(sp) {
     let i = string_port_pos(sp)
     if (i == 0)
@@ -410,17 +451,17 @@ function lex(sp) {
         }
     } else if (c == "'") {
         read_char(sp)
-        return make_symbol("quote")
+        return quote_symbol
     } else if (c == "`") {
         read_char(sp)
-        return make_symbol("quasiquote")
+        return quasiquote_symbol
     } else if (c == ",") {
         read_char(sp)
         if (peek_char(sp) == "@") {
             read_char(sp)
-            return make_symbol("unquote-splicing")
+            return unquote_splicing_symbol
         } else
-            return make_symbol("unquote")
+            return unquote_symbol
     } else {
         return lex_symbol(sp)
     }
@@ -525,6 +566,11 @@ function parse_tokens(ts) {
             let sub = out
             pop()
             out = o_cons (reverse(sub),out)
+// TODO TODO
+//        } else if (t === quote_symbol) {
+//            let p = t[i] // safe to look ahead (undefined if i>=n )
+//            if (p === LPAREN) {
+//            }          
         } else {
             out = o_cons (t,out)
         }
@@ -600,6 +646,7 @@ const let1_k   = Symbol("let1_k")
 const apply_k  = Symbol("apply_k")
 
 const o_done_k = [done_k, false, false, false] // sentinel
+o_done_k[2] = o_done_k                         
 
 function cont_type(k) { return k[0] } // one of the above symbols
 function cont_data(k) { return k[1] } // dependent of continuation type
@@ -615,18 +662,21 @@ function set_cont_next(k,k1) { k[2] = k1 }
 // E = Environment (id -> binding)
 // S = Storage
 // K = Continuation
+// M = Meta Continuation
 
 function state_e(s)   { return s[0] }
 function state_v(s)   { return s[0] }
 function state_env(s) { return s[1] }
 function state_mem(s) { return s[2] }
 function state_k(s)   { return s[3] }
+function state_m(s)   { return s[4] } // list of (cons tag continuation)
 
 function set_state_k(s,k) { s[3] = k }
+function set_state_m(s,k) { s[4] = k }
 
 // inject a program into a state
 function inject(expression) {
-    return [expression, initial_env, false, o_done_k]
+    return [expression, initial_env, false, o_done_k, o_null]
 }
 
 
@@ -636,7 +686,7 @@ function step( s ) {
     let v   = undefined
 
     while (v === undefined ) {
-	if  (is_boolean(e) || is_number(e) || is_string(e) || is_null(e) || is_void(e)) {
+	if  (is_boolean(e) || is_number(e) || is_string(e) || is_null(e) || is_void(e) || is_continuation(e)) {
             v = e
 	} else if (is_symbol(e)) {
             v = lookup(env, e)
@@ -692,7 +742,7 @@ function step( s ) {
             }
         } else {
             console.log(e)
-            throw new Error("internal error: unhandled expression")
+            throw new Error("application: not a procedure")
         }
     }
     s[0] = v
@@ -712,10 +762,10 @@ function continue_step(s) {
             let env   = cont_env(k)
             let new_k = [apply_k, [rev_vals,o_cdr(es)], cont_next(k), env]	    
             set_state_k(new_k)
-            return [e,state_env(s),state_mem(s),new_k]
+            return [e,state_env(s),state_mem(s),new_k,state_m(s)]
 	} else {
-            let count = 0
             let args = o_null
+            let count = 0     // invariant: count = args.length
             while (!is_null(rev_vals)) {
                 args = o_cons(o_car(rev_vals), args)
                 count++
@@ -724,13 +774,19 @@ function continue_step(s) {
             let rator = o_car(args)
             args = o_cdr(args)
             count--
-            while (true) { // loop in case of apply
+            while (true) { // loop in case of apply                
                 // console.log("continue")
+                // console.log(js_list_length(state_m(s)))
+                // console.log("meta_k")
+                // console.log(state_m(s))
+                // console.log("k")
+                // console.log(state_k(s))
+                
+                // console.log(tag(rator))
                 // console.log(rator)
                 let rator_tag = tag(rator)
                 if (rator === o_apply) {
                     // (apply rator args)
-                    // todo: check arity
                     if (!(js_list_length(args)==2))
                         error_arity("apply", args)                    
                     rator = o_car(args)
@@ -738,22 +794,40 @@ function continue_step(s) {
                     count = js_list_length(args)
                     if (!is_list(args))
                         error_arg("apply", "list", args)                        
-                    // todo: check that args is a list
                     // no break => we loop and handle the new rator and args
                 } else if (rator === o_callcc) {
+                    // console.log("call/cc")
+                    // console.log(cont_next(state_k(s)))
                     if (!(count == 1))
                         error_arity("callcc", args)
                     rator = o_car(args)
                     args  = o_cons([continuation_tag, cont_next(state_k(s))], o_null)
                     // no break => loop to call the callcc argument with the continuation
+                } else if (rator === o_call_prompt) {
+                    console.log("call/prompt")
+                    // (call/prompt proc tag)
+                    if (!(count == 2))
+                        error_arity("call_prompt", args)
+                    rator     = o_car(args)
+                    let ptag  = o_car(o_cdr(args))
+                    if (!(tag(ptag) === symbol_tag))
+                        throw new Error("call/prompt: tag not a symbol")
+                    args  = o_null
+                    count = 0
+                    set_state_m(s, o_cons( o_cons(cont_next(state_k(s)), ptag), 
+                                           state_m(s)))
+                    set_state_k(s, o_done_k)
+                    // no break => loop to call the proc argument
                 } else if (rator_tag === primitive_tag) {
-                    let f = rator
+                    // console.log(primitive_name(rator))
+                    let f          = rator
                     let dispatcher = primitive_dispatcher(f)
                     let proc       = primitive_proc(f)
-                    let v = dispatcher(proc,args)
+                    let v          = dispatcher(proc, args)
                     return [o_cons(quote_symbol, o_cons(v, o_null)),
-                            state_env(s),state_mem(s),cont_next(k)]
+                            state_env(s), state_mem(s), cont_next(state_k(s)), state_m(s)]
                 } else if (rator_tag === closure_tag) {
+                    // console.log("closure")
                     let all_args = args
                     let ce       = closure_e(rator)         // (lambda formals body)
                     let cenv     = closure_env(rator)
@@ -771,17 +845,17 @@ function continue_step(s) {
                     } else if ( (!is_null(formals)) || (!is_null(args)) ) {
                         fail_arity(rator, all_args)
                     }                       
-                    return [body,cenv,state_mem(s),cont_next(k)]
+                    return [body,cenv,state_mem(s),cont_next(state_k(s)),state_m(s)]
                 } else if (rator_tag === continuation_tag) {
                     let k   = continuation_k(rator)
                     let arg = o_car(args)
                     return [o_cons(quote_symbol, o_cons(arg, o_null)), 
-                            state_env(s), state_mem(s), k]
+                            state_env(s), state_mem(s), k, state_m(s)]
                 } else {
                     // todo: throw an interpreter exception
                     console.log("------")
                     console.log(rator)
-                    throw new Error("unhandled application operator")
+                    throw new Error("application: not a procedure")
                 }
             }
         }	
@@ -790,29 +864,30 @@ function continue_step(s) {
         let e     = ( state_v(s) == o_false) ? d[1] : d[0]
 	let new_k = cont_next(k)
 	let env   = cont_env(k)
-	return [e,state_env(s),state_mem(s),new_k]
+	return [e,state_env(s),state_mem(s),new_k,state_m(s)]
     } else if (t === begin_k) {
 	let d = cont_data(k)
 	let e = o_car(d)
 	let next = cont_next(k)
 	let new_k = is_null(o_cdr(d)) ? next : [begin_k, o_cdr(d), next, state_env(s)]
-	return [e,state_env(s),state_mem(s),new_k]
+	return [e,state_env(s),state_mem(s),new_k,state_m(s)]
     } else if (t === let1_k) {
 	let v    = state_v(s)
 	let d    = cont_data(k) 
 	let x    = d[0]
 	let e1   = d[1]
 	let env1 = extend_env(cont_env(k), x, v)
-	return [e1, env1, state_mem(s), cont_next(k)]
+	return [e1, env1, state_mem(s), cont_next(k),state_m(s)]
     } else if (t === define_k) {
         let v = state_v(s)
         let x = cont_data(k)
         extend_top_level(x,v)
         return [o_cons(quote_symbol, o_cons(o_void, o_null)),
-                state_env(s),state_mem(s),cont_next(k)]
+                state_env(s),state_mem(s),cont_next(k),state_m(s)]
     } else if (t === done_k) {
 	return s
     } else {
+        console.log("//////")
 	console.log(k)
         throw new Error("continue_step: unhandled continuation type")
     }    
@@ -824,7 +899,13 @@ function core_eval(expr) {
     while (true) {	
 	step(s)
 	if (state_k(s) === o_done_k) {
-            return s[0]
+            if (state_m(s) === o_null) { 
+                return state_v(s)
+            } else {
+                console.log("core_eval: discarding tag form meta continuations")
+                set_state_k(s,o_car(o_car(state_m(s))))
+                set_state_m(s,o_cdr(state_m(s)))
+            }
 	}
 	s = continue_step(s)
     }
@@ -913,8 +994,6 @@ console.log(test_null_and_pairs())
 console.log("Environments")
 console.log(test_environments())
 
-
-
 let expr0  = parse( 42 )
 let expr1  = parse( "fortytwo" )
 let expr2  = parse( ["if", true,  42, 43] )
@@ -954,6 +1033,15 @@ let expr27 = o_car(parse_tokens(read_from_string("(apply + (cons 1 (cons 2 null)
 let expr28 = o_car(parse_tokens(read_from_string("(call/cc (lambda (x) x))")))            // => some continuation
 let expr29 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (k 42)))")))       // => 42
 let expr30 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (+ 1 (k 42))))"))) // => 42
+let expr31 = o_car(parse_tokens(read_from_string("(call/prompt (lambda () 10) (quote tag))")))   // => 10
+let expr32 = o_car(parse_tokens(read_from_string("(let1 k (call/prompt (lambda () (call/cc (lambda (k) k)))  \
+                                                                       (quote tag))                          \
+                                                     (+ 1 (call/prompt (lambda () (k 11))                    \
+                                                                       (quote tag))))")))   // => 12
+let expr33 = o_car(parse_tokens(read_from_string("(call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag))"))) 
+let expr34 = o_car(parse_tokens(read_from_string("((call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag)) list)")))
+let expr35 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) k))"))) 
+let expr36 = o_car(parse_tokens(read_from_string("((call/cc (lambda (k) k)) list)"))) 
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
@@ -963,16 +1051,18 @@ let exprs_all = [exprs1,exprs2,exprs3]
 // console.log(top_env)
 
 let initial_env = make_empty_env()
-initial_env = extend_env(initial_env, sym("cons"),    register_primitive("cons",  o_cons,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("car"),     register_primitive("car",   o_car,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("cdr"),     register_primitive("cdr",   o_cdr,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("+"),       register_primitive("+",     o_plus,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("-"),       register_primitive("-",     o_minus,   dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("*"),       register_primitive("*",     o_mult,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("zero?"),   register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("apply"),   o_apply)
-initial_env = extend_env(initial_env, sym("call/cc"), o_callcc)
-initial_env = extend_env(initial_env, sym("null"),    o_null)
+initial_env = extend_env(initial_env, sym("cons"),        register_primitive("cons",  o_cons,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("car"),         register_primitive("car",   o_car,     dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("cdr"),         register_primitive("cdr",   o_cdr,     dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("+"),           register_primitive("+",     o_plus,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("-"),           register_primitive("-",     o_minus,   dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("*"),           register_primitive("*",     o_mult,    dispatch2, 1<<2))
+initial_env = extend_env(initial_env, sym("zero?"),       register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
+initial_env = extend_env(initial_env, sym("list"),        register_primitive("list",  o_list,    dispatchn, 0))
+initial_env = extend_env(initial_env, sym("apply"),       o_apply)
+initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
+initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
+initial_env = extend_env(initial_env, sym("null"),        o_null)
 
 // console.log(lookup(top_env, sym("cons")))
 
@@ -988,8 +1078,14 @@ initial_env = extend_env(initial_env, sym("null"),    o_null)
 //    "(begin ; this is a comment \n \
 //            ; another comment \n \
 //        (define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) \
-//        (fact 5))")))))
+//        (fact 5))"))))
 
 // console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
 
-console.log( core_eval(expr30) )
+// let expr32 = o_car(parse_tokens(read_from_string("(quote tag)")))   
+
+// console.log(expr32)
+
+// let expr36 = o_car(parse_tokens(read_from_string("(list 1 2)")))
+
+console.log( core_eval(expr33) )

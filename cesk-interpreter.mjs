@@ -1,6 +1,7 @@
 // CESK-interpreter in ES6 JavaScript
 
 // [ ] write/print/display
+// [ ] handle ' in reader
 
 // Running
 //   node cesk-interpreter.mjs
@@ -14,20 +15,21 @@
 // Any value would work.
 // The choice below prints nicely.
 
-const symbol_tag       = ["symbol"] 
-const number_tag       = ["number"] 
-const boolean_tag      = ["boolean"] 
-const string_tag       = ["string"]
-const pair_tag         = ["pair"]
-const closure_tag      = ["closure"]
-const primitive_tag    = ["primitive"]
-const string_port_tag  = ["string_port"]
-const continuation_tag = ["continuation"]
-const hash_tag         = ["hash"]
+const symbol_tag             = ["symbol"] 
+const number_tag             = ["number"] 
+const boolean_tag            = ["boolean"] 
+const string_tag             = ["string"]
+const pair_tag               = ["pair"]
+const closure_tag            = ["closure"]
+const primitive_tag          = ["primitive"]
+const string_input_port_tag  = ["string_input_port"]  // internal for now
+const string_output_port_tag = ["string_output_port"] // internal for now
+const continuation_tag       = ["continuation"]
+const hash_tag               = ["hash"]
 
-const null_tag        = ["null"]       // These names are useful for debugging,
-const void_tag        = ["void"]       // although they could be made singletons.
-const singleton_tag   = ["singleton"]  // o_apply, o_callcc
+const null_tag               = ["null"]       // These names are useful for debugging,
+const void_tag               = ["void"]       // although they could be made singletons.
+const singleton_tag          = ["singleton"]  // o_apply, o_callcc
 
 function tag(o) { return o[0] }
 
@@ -359,32 +361,50 @@ function is_letter(c) { return !(c===EOF) && !(letters.indexOf(c) == -1) }
 //function is_special_initial(c) { return !(c===EOF) && !(special_initials.indexOf(c) == -1) }
 //function is_initial(c) { return is_letter(c) || is_special_initial(c) }
 const delimiters = " \t\n()[]{}\",'`;"
-function is_delimiter(c) { return !(c===EOF) && !(delimiters.indexOf(c) == -1) }
+function is_delimiter(c) { return (c===EOF) || !(delimiters.indexOf(c) == -1) }
 
 
 // STRING PORTS
 
 const EOF = Symbol("EOF")
 
-function make_string_port(s)       { return [string_port_tag, s,0] }
-function string_port_string(sp)    { return sp[1] }
-function string_port_pos(sp)       { return sp[2] }
-function set_string_port_pos(sp,i) { sp[2] = i }
+function make_string_input_port(s)       { return [string_input_port_tag, s,0] }
+function string_input_port_string(sp)    { return sp[1] }
+function string_input_port_pos(sp)       { return sp[2] }
+function set_string_input_port_pos(sp,i) { sp[2] = i }
 
+function make_string_output_port()         { return [string_output_port_tag, [], 0] }
+function string_output_port_strings(sp)    { return sp[1] }
+function string_output_port_pos(sp)        { return sp[2] }
+function set_output_string_port_pos(sp,i)  { sp[2] = i }
+
+// Output
+function get_output_string(sp) {
+    return string_output_port_strings(sp).join("")
+}
+function write_string(sp,s) {
+    let xs = string_output_port_strings(sp)
+    let i = string_output_port_pos(sp)
+    xs[i++] = s
+    set_output_string_port_pos(sp,i)
+    return o_void
+}
+
+// Input
 function read_char(sp) {
-    let s = string_port_string(sp)
-    let i = string_port_pos(sp)
+    let s = string_input_port_string(sp)
+    let i = string_input_port_pos(sp)
     if (i == s.length)
         return EOF
     else {
         let c = s[i]
-        set_string_port_pos(sp,i+1)
+        set_string_input_port_pos(sp,i+1)
         return c
     }       
 }
 function peek_char(sp) {
-    let s = string_port_string(sp)
-    let i = string_port_pos(sp)
+    let s = string_input_port_string(sp)
+    let i = string_input_port_pos(sp)
     if (i == s.length)
         return EOF
     else {
@@ -393,11 +413,11 @@ function peek_char(sp) {
 }
 
 function back_char(sp) {
-    let i = string_port_pos(sp)
+    let i = string_input_port_pos(sp)
     if (i == 0)
         return 0
     else {
-        set_string_port_pos(sp,i-1)
+        set_string_input_port_pos(sp,i-1)
         return i-1
     }       
 }
@@ -622,7 +642,7 @@ function parse_tokens(ts) {
         
             
 function read_from_string(s) {
-    let sp = make_string_port(s)
+    let sp = make_string_input_port(s)
     let tokens = []
     let i = 0
     let t = lex(sp)
@@ -635,6 +655,100 @@ function read_from_string(s) {
     return tokens
 }
 
+// WRITING
+
+// const pair_tag               = ["pair"]
+
+// const string_input_port_tag  = ["string_input_port"]  // internal for now
+// const string_output_port_tag = ["string_output_port"] // internal for now
+
+function format_symbol  (o) { return symbol_string(o) }
+function format_number  (o) { return number_value(o).toString() }
+function format_boolean (o) { return (o === o_false ? "#f" : "#t") }
+function format_string  (o) { return "\"" + string_string(o) + "\"" }
+
+
+function format_for_display(o) {
+    let sp = make_string_output_port()    
+
+    let stack = o_cons(["single", o], o_null)
+    while (is_pair(stack)) {
+        let cmd  = o_car(stack)[0]
+        let data = o_car(stack)[1]
+        stack = o_cdr(stack)
+
+        if (cmd == "single") {
+            o = data
+        } else if (cmd == "list_tail") {
+            if (is_null(data)) {
+                write_string(sp, ") ")
+                o = undefined
+            } else  {
+                o    = o_car(data)
+                data = o_cdr(data)
+                stack = o_cons( ["list_tail", data], stack )
+            }
+        }            
+        while (!(o === undefined)) {
+            // console.log("o")
+            // console.log(o)
+            if (cmd == "cdr_of_pair") {
+                write_string(" . ")
+            }            
+            let t = tag(o)
+            if      (t == symbol_tag)         { write_string(sp, format_symbol(o))  }
+            else if (t == number_tag)         { write_string(sp, format_number(o))  }
+            else if (t == boolean_tag)        { write_string(sp, format_boolean(o)) }
+            else if (t == string_tag)         { write_string(sp, format_string(o))  }
+            else if (t == closure_tag)        { write_string(sp, "#<procedure>")    }
+            else if (t == primitive_tag)      { write_string(sp, "#<procedure:" + primtive_name(o) +  ">") }
+            else if (t == continuation_tag)   { write_string(sp, "#<continuation>") }
+            else if (t == hash_tag)           { write_string(sp, "#<hash>") }        
+            else if (o === o_null)            { write_string(sp, "()") }
+            else if (o === o_void)            { write_string(sp, "#<void>") }
+            else if (o === o_apply)           { write_string(sp, "#<procedure:apply>") }
+            else if (o === o_callcc)          { write_string(sp, "#<procedure:call/cc>") }
+            else if (o === o_call_prompt)     { write_string(sp, "#<procedure:call/prompt") }
+            else if (t === pair_tag)          {
+                if (is_list(o)) { 
+                    write_string(sp, "(")
+                    cmd = "single"
+                    stack = o_cons( ["list_tail", o], stack)
+                } // we know that the last pair doesn't end in null
+                else if (is_pair(o_cdr(o))) {
+                    write_string(sp, "(")
+                    cmd = "single"
+                    let d = o_cdr(o)
+                    o = o_car(x)
+                    stack = o_cons( ["list*_tail", d], stack)
+                } // we must be at the last pair of a non-list
+                else {
+                    write_string(sp, "(")
+                    cmd = "single"
+                    let d = o_cdr(o)
+                    o = o_car(x)
+                    stack = o_cons( ["cdr_of_pair", d], stack)
+                }
+            } else {
+                console.log(o)
+                throw new Error("internal error: format_for_display is missing a case")
+            }
+            o = undefined
+            if (cmd == "cdr_of_pair") {
+                // console.log("X")
+                write_string(sp, ")" )
+            } else if (cmd == "list_tail") {
+                // console.log("Y")
+                if (!is_null(data))
+                    write_string(sp, " ")
+            } else if (cmd == "list_tail*") {
+                // console.log("Z")
+                write_string(sp, " " )
+            }
+        }
+    }
+    return sp
+}
 
 
 // ENVIRONMENT
@@ -1045,6 +1159,14 @@ function test_hashes() {
     return t1 && t2 && t3 && t4 && t5 && t6
 }
 
+function test_string_output_ports() {
+    let sp = make_string_output_port()
+    write_string(sp, "foo")
+    write_string(sp, "bar")
+    let t1 = get_output_string(sp) == "foobar"    
+    return t1
+}
+
 
 console.log("Booleans")
 console.log(test_booleans())
@@ -1058,6 +1180,8 @@ console.log("Environments")
 console.log(test_environments())
 console.log("Hashes")
 console.log(test_hashes())
+console.log("String Output Ports")
+console.log(test_string_output_ports())
 
 function parse1(str) {
     return o_car(parse_tokens(read_from_string(str)))
@@ -1186,4 +1310,22 @@ initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 // let expr36 = o_car(parse_tokens(read_from_string("(list 1 2)")))
 
 // let expr38 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (hash-ref h (quote foo)))")
-console.log( core_eval(expr41) )
+// console.log( core_eval(expr41) )
+
+
+//console.log(format_for_display(parse1( "1" )))
+//console.log(format_for_display(parse1( "foo" )))
+//console.log(format_for_display(parse1( "\"foo\"" )))
+//console.log(format_for_display(parse1( "#t" )))
+//console.log(format_for_display(parse1( "#f" )))
+//console.log(format_for_display(parse1( "null" )))
+//console.log(format_for_display(parse1( "()" )))
+
+console.log(format_for_display(parse1( "(11 22 (44 55) 33)" )))
+console.log(get_output_string(format_for_display(parse1( "(11 22 (44 55) 33)" ))))
+
+console.log(format_for_display(parse1( "(11 (22 44) . 33)" )))
+console.log(get_output_string(format_for_display(parse1( "(11 (22 44) . 33)" ))))
+
+console.log(get_output_string(format_for_display(parse1( "(11 (quote (22 44)) . 33)" ))))
+

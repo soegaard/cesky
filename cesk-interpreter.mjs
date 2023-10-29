@@ -34,7 +34,7 @@ function tag(o) { return o[0] }
 const o_true  = [boolean_tag, true]
 const o_false = [boolean_tag, false]
 function is_boolean(o) { return Array.isArray(o) && (tag(o) === boolean_tag) }
-function make_boolean(b) { return ( b === true ? o_true  : o_false ) }
+function make_boolean(b) { return ( b === false ? o_false  : o_true ) }
 
 // STRINGS
 function is_string(o)      { return Array.isArray(o) && (tag(o) === string_tag) }
@@ -148,11 +148,16 @@ function o_mult(o1, o2)  { return make_number(o1[1] * o2[1]) }
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
 
 // HASH
-function is_hash(o) { return Array.isArray(o) && (tag(o) === hash_tag) }
-function hash_table(o) { return o[1] }
+//   Mutable hash tables with symbols as keys.
 function make_empty_hash() { return [hash_tag, {}] }
+function is_hash(o)        { return Array.isArray(o) && (tag(o) === hash_tag) }
+function hash_table(o)     { return o[1] }
 
-function hash_ref(h, sym, def) {
+function o_is_hash(o)      { return make_boolean(is_hash(o)) }
+
+function o_hash_ref(h, sym, def) {
+    check("hash-ref", "hash",   is_hash,   h)
+    check("hash-ref", "symbol", is_symbol, sym)
     let ht = hash_table(h)
     let key = symbol_key(sym)
     let v = ht[key]
@@ -163,20 +168,39 @@ function hash_ref(h, sym, def) {
     }
     return v
 }
-function hash_set(h, sym, val) {
+function o_hash_set(h, sym, val) {
+    check("hash-set!", "hash",   is_hash,   h)
+    check("hash-ref",  "symbol", is_symbol, sym)
     let ht = hash_table(h)
     let key = symbol_key(sym)
     ht[key] = val
     return o_void
 }
-function hash_remove(h,sym) {
+function o_hash_remove(h,sym) {
+    check("hash-remove!", "hash",   is_hash,   h)
+    check("hash-remove!", "symbol", is_symbol, sym)
     let ht = hash_table(h)
     let key = symbol_key(sym)
     delete ht[key]
     return o_void
 }
-
-
+function o_hash(args) {
+    let kvs = args
+    while (!(kvs === o_null)) {
+        if (!is_symbol(o_car(kvs)))
+            throw new Error( "hash: expected a list of interleaved symbols and values" )
+        if (o_cdr(kvs) === o_null)
+            throw new Error( "hash: missing value for the last key" )
+        kvs = o_cdr(o_cdr(kvs))
+    }
+    kvs = args
+    let ht = make_empty_hash()
+    while (!(kvs === o_null)) {
+        o_hash_set(ht, o_car(kvs), o_car(o_cdr(kvs)))
+        kvs = o_cdr(o_cdr(kvs))
+    }
+    return ht
+}
 
 // SINGLETONS
 
@@ -238,6 +262,10 @@ function dispatch2(proc, args) {
 function dispatch3(proc, args) {
     return proc(o_car(args), o_car(o_cdr(args)), o_car(o_cdr(o_cdr(args))))
 }
+function dispatch23(proc, args) {    
+    return proc(o_car(args), o_car(o_cdr(args)),
+                (o_cdr(o_cdr(args)) === o_null ? undefined : o_car(o_cdr(o_cdr(args)))))
+}
 function dispatchn(proc, args) {
     return proc(args)
 }
@@ -246,11 +274,18 @@ function dispatchn(proc, args) {
 
 
 // ERRORS
+
+
 function fail_expected1(name, type, value) {
     console.log(name + ":")
     console.log("  expected: " + type)
     console.log("  given: " + value)
     throw new Error("^^^^")    
+}
+
+function check(name, typename, predicate, value) {
+    if (!predicate(value)) 
+        fail_expected1(name, typename, value)
 }
 
 function panic(msg) {
@@ -982,6 +1017,25 @@ function test_environments() {
     return t1 && t2 && t3
 }
 
+function test_hashes() {
+    let h = make_empty_hash()
+    let foo = sym("foo")
+    let bar = sym("bar")
+    o_hash_set(h, foo, 42)
+    let t1 = o_hash_ref(h, foo) === 42
+    o_hash_set(h, foo, 43)
+    let t2 = o_hash_ref(h, foo) === 43
+    o_hash_set(h, bar, 44)
+    let t3 = o_hash_ref(h, foo) === 43 
+    let t4 = o_hash_ref(h, bar) === 44
+
+    let h2 = o_hash(o_cons(foo, o_cons(42, o_cons(bar, o_cons(43, o_null)))))
+    let t5 = o_hash_ref(h2, foo) === 42
+    let t6 = o_hash_ref(h2, bar) === 43
+    
+    return t1 && t2 && t3 && t4 && t5 && t6
+}
+
 
 console.log("Booleans")
 console.log(test_booleans())
@@ -993,6 +1047,12 @@ console.log("Null and Pairs")
 console.log(test_null_and_pairs())
 console.log("Environments")
 console.log(test_environments())
+console.log("Hashes")
+console.log(test_hashes())
+
+function parse1(str) {
+    return o_car(parse_tokens(read_from_string(str)))
+}
 
 let expr0  = parse( 42 )
 let expr1  = parse( "fortytwo" )
@@ -1029,19 +1089,21 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    1,
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
-let expr27 = o_car(parse_tokens(read_from_string("(apply + (cons 1 (cons 2 null)))")))
-let expr28 = o_car(parse_tokens(read_from_string("(call/cc (lambda (x) x))")))            // => some continuation
-let expr29 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (k 42)))")))       // => 42
-let expr30 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) (+ 1 (k 42))))"))) // => 42
-let expr31 = o_car(parse_tokens(read_from_string("(call/prompt (lambda () 10) (quote tag))")))   // => 10
-let expr32 = o_car(parse_tokens(read_from_string("(let1 k (call/prompt (lambda () (call/cc (lambda (k) k)))  \
-                                                                       (quote tag))                          \
-                                                     (+ 1 (call/prompt (lambda () (k 11))                    \
-                                                                       (quote tag))))")))   // => 12
-let expr33 = o_car(parse_tokens(read_from_string("(call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag))"))) 
-let expr34 = o_car(parse_tokens(read_from_string("((call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag)) list)")))
-let expr35 = o_car(parse_tokens(read_from_string("(call/cc (lambda (k) k))"))) 
-let expr36 = o_car(parse_tokens(read_from_string("((call/cc (lambda (k) k)) list)"))) 
+let expr27 = parse1("(apply + (cons 1 (cons 2 null)))")
+let expr28 = parse1("(call/cc (lambda (x) x))")            // => some continuation
+let expr29 = parse1("(call/cc (lambda (k) (k 42)))")       // => 42
+let expr30 = parse1("(call/cc (lambda (k) (+ 1 (k 42))))") // => 42
+let expr31 = parse1("(call/prompt (lambda () 10) (quote tag))")   // => 10
+let expr32 = parse1("(let1 k (call/prompt (lambda () (call/cc (lambda (k) k)))  \
+                                          (quote tag))                          \
+                       (+ 1 (call/prompt (lambda () (k 11))                    \
+                                         (quote tag))))")   // => 12
+let expr33 = parse1("(call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag))")
+let expr34 = parse1("((call/prompt (lambda () (call/cc (lambda (k) k))) (quote tag)) list)")
+let expr35 = parse1("(call/cc (lambda (k) k))")
+let expr36 = parse1("((call/cc (lambda (k) k)) list)")
+let expr37 = parse1("(list 1 2 3)")
+
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
@@ -1051,18 +1113,26 @@ let exprs_all = [exprs1,exprs2,exprs3]
 // console.log(top_env)
 
 let initial_env = make_empty_env()
-initial_env = extend_env(initial_env, sym("cons"),        register_primitive("cons",  o_cons,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("car"),         register_primitive("car",   o_car,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("cdr"),         register_primitive("cdr",   o_cdr,     dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("+"),           register_primitive("+",     o_plus,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("-"),           register_primitive("-",     o_minus,   dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("*"),           register_primitive("*",     o_mult,    dispatch2, 1<<2))
-initial_env = extend_env(initial_env, sym("zero?"),       register_primitive("zero?", o_is_zero, dispatch1, 1<<1))
-initial_env = extend_env(initial_env, sym("list"),        register_primitive("list",  o_list,    dispatchn, 0))
+initial_env = extend_env(initial_env, sym("cons"),        register_primitive("cons",      o_cons,     dispatch2,  1<<2))
+initial_env = extend_env(initial_env, sym("car"),         register_primitive("car",       o_car,      dispatch1,  1<<1))
+initial_env = extend_env(initial_env, sym("cdr"),         register_primitive("cdr",       o_cdr,      dispatch1,  1<<1))
+initial_env = extend_env(initial_env, sym("+"),           register_primitive("+",         o_plus,     dispatch2,  1<<2))
+initial_env = extend_env(initial_env, sym("-"),           register_primitive("-",         o_minus,    dispatch2,  1<<2))
+initial_env = extend_env(initial_env, sym("*"),           register_primitive("*",         o_mult,     dispatch2,  1<<2))
+initial_env = extend_env(initial_env, sym("zero?"),       register_primitive("zero?",     o_is_zero,  dispatch1,  1<<1))
+initial_env = extend_env(initial_env, sym("list"),        register_primitive("list",      o_list,     dispatchn,  0))
+initial_env = extend_env(initial_env, sym("hash?"),       register_primitive("hash?",     o_is_hash,  dispatch1,  1<<1))
+initial_env = extend_env(initial_env, sym("hash"),        register_primitive("hash" ,     o_hash,     dispatchn,  0))
+initial_env = extend_env(initial_env, sym("hash-ref"),    register_primitive("hash-ref",  o_hash_ref, dispatch23, 1<<2)) // 2 or 3 todo
+initial_env = extend_env(initial_env, sym("hash-set!"),   register_primitive("hash-set!", o_hash_set, dispatch3,  1<<3))
+
+
+// Singletons
+initial_env = extend_env(initial_env, sym("null"),        o_null)
+// Special procedures
 initial_env = extend_env(initial_env, sym("apply"),       o_apply)
 initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
 initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
-initial_env = extend_env(initial_env, sym("null"),        o_null)
 
 // console.log(lookup(top_env, sym("cons")))
 
@@ -1088,4 +1158,7 @@ initial_env = extend_env(initial_env, sym("null"),        o_null)
 
 // let expr36 = o_car(parse_tokens(read_from_string("(list 1 2)")))
 
-console.log( core_eval(expr33) )
+// let expr38 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (hash-ref h (quote foo)))")
+let expr38 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote foo))")
+let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux) 44)")
+console.log( core_eval(expr38) )

@@ -1,5 +1,7 @@
 // CESK-interpreter in ES6 JavaScript
 
+// [ ] write/print/display
+
 // Running
 //   node cesk-interpreter.mjs
 // Linting
@@ -231,6 +233,8 @@ function primitive_proc(o)       { return o[2] }
 function primitive_dispatcher(o) { return o[3] }
 function primitive_arity_mask(o) { return o[4] }
 
+const MAX_PRIM_ARITY = 10
+
 let registered_prims       = []
 let registered_prims_count = 0
 function register_primitive(name, proc, dispatcher, arity_mask) {
@@ -248,7 +252,6 @@ function primitive_to_id(o) {
 function id_to_primitive(id) {
     return registered_prims[id]
 }
-
 function dispatch0(proc, args) {
     return proc()
 }
@@ -352,9 +355,9 @@ const digits = "0123456789"
 function is_digit(c) { return !(c===EOF) && !(digits.indexOf(c) == -1) }
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 function is_letter(c) { return !(c===EOF) && !(letters.indexOf(c) == -1) }
-const special_initials = "!$%&*/:<=.>?^_~"
-function is_special_initial(c) { return !(c===EOF) && !(special_initials.indexOf(c) == -1) }
-function is_initial(c) { return is_letter(c) || is_special_initial(c) }
+//const special_initials = "!$%&*/:<=.>?^_~"
+//function is_special_initial(c) { return !(c===EOF) && !(special_initials.indexOf(c) == -1) }
+//function is_initial(c) { return is_letter(c) || is_special_initial(c) }
 const delimiters = " \t\n()[]{}\",'`;"
 function is_delimiter(c) { return !(c===EOF) && !(delimiters.indexOf(c) == -1) }
 
@@ -858,6 +861,12 @@ function continue_step(s) {
                     let f          = rator
                     let dispatcher = primitive_dispatcher(f)
                     let proc       = primitive_proc(f)
+                    let mask       = primitive_arity_mask(f)
+                    if (!( mask & ( 1 << ((count >= MAX_PRIM_ARITY) ? MAX_PRIM_ARITY : count) ) ))
+                        throw new Error(   primitive_name(f) + ": arity mismatch;\n"
+                                         + "  the expected number of arguments doesn't match the given number\n"
+                                        // + "   expected: " arity_mask_to_string(mask)"
+                                         + "     given: " + count)
                     let v          = dispatcher(proc, args)
                     return [o_cons(quote_symbol, o_cons(v, o_null)),
                             state_env(s), state_mem(s), cont_next(state_k(s)), state_m(s)]
@@ -1103,28 +1112,46 @@ let expr34 = parse1("((call/prompt (lambda () (call/cc (lambda (k) k))) (quote t
 let expr35 = parse1("(call/cc (lambda (k) k))")
 let expr36 = parse1("((call/cc (lambda (k) k)) list)")
 let expr37 = parse1("(list 1 2 3)")
-
+let expr38 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote foo))")
+let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux) 44)")
+let expr40 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (begin (hash-set! h (quote foo) 45) (hash-ref h (quote foo))))")
+let expr41 = parse1("(zero? 0)")
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
-let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26]
-let exprs_all = [exprs1,exprs2,exprs3]
+let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26,expr27,expr28,expr29]
+let exprs4 = [expr30,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr39]
+let exprs5 = [expr40] // ,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr29]
+let exprs_all = [exprs1,exprs2,exprs3,exprs4,exprs5]
 
 // console.log(top_env)
 
+// Primitives
+function primitive0(name, proc)       { return register_primitive(name, proc, dispatch0,   1<<0)}
+function primitive1(name, proc)       { return register_primitive(name, proc, dispatch1,   1<<1)}
+function primitive2(name, proc)       { return register_primitive(name, proc, dispatch2,   1<<2)}
+function primitive3(name, proc)       { return register_primitive(name, proc, dispatch3,   1<<3)}
+function primitive23(name, proc)      { return register_primitive(name, proc, dispatch23, (1<<2) | (1<<3))}
+function primitiven(name, proc, mask) { return register_primitive(name, proc, dispatchn,   mask)}
+// mask  1+2 = 1 or 2 arguments
+// mask  1   exactly 1 argument
+// maske 0   no arguments
+// mask -1 = any number
+// mask -2 = 1 or more
+
 let initial_env = make_empty_env()
-initial_env = extend_env(initial_env, sym("cons"),        register_primitive("cons",      o_cons,     dispatch2,  1<<2))
-initial_env = extend_env(initial_env, sym("car"),         register_primitive("car",       o_car,      dispatch1,  1<<1))
-initial_env = extend_env(initial_env, sym("cdr"),         register_primitive("cdr",       o_cdr,      dispatch1,  1<<1))
-initial_env = extend_env(initial_env, sym("+"),           register_primitive("+",         o_plus,     dispatch2,  1<<2))
-initial_env = extend_env(initial_env, sym("-"),           register_primitive("-",         o_minus,    dispatch2,  1<<2))
-initial_env = extend_env(initial_env, sym("*"),           register_primitive("*",         o_mult,     dispatch2,  1<<2))
-initial_env = extend_env(initial_env, sym("zero?"),       register_primitive("zero?",     o_is_zero,  dispatch1,  1<<1))
-initial_env = extend_env(initial_env, sym("list"),        register_primitive("list",      o_list,     dispatchn,  0))
-initial_env = extend_env(initial_env, sym("hash?"),       register_primitive("hash?",     o_is_hash,  dispatch1,  1<<1))
-initial_env = extend_env(initial_env, sym("hash"),        register_primitive("hash" ,     o_hash,     dispatchn,  0))
-initial_env = extend_env(initial_env, sym("hash-ref"),    register_primitive("hash-ref",  o_hash_ref, dispatch23, 1<<2)) // 2 or 3 todo
-initial_env = extend_env(initial_env, sym("hash-set!"),   register_primitive("hash-set!", o_hash_set, dispatch3,  1<<3))
+initial_env = extend_env(initial_env, sym("cons"),        primitive2("cons",       o_cons))
+initial_env = extend_env(initial_env, sym("car"),         primitive1("car",        o_car))
+initial_env = extend_env(initial_env, sym("cdr"),         primitive1("cdr",        o_cdr))
+initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
+initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
+initial_env = extend_env(initial_env, sym("*"),           primitive2("*",          o_mult))
+initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
+initial_env = extend_env(initial_env, sym("list"),        primitiven("list",       o_list, -1))
+initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
+initial_env = extend_env(initial_env, sym("hash"),        primitiven("hash",       o_hash, -1))
+initial_env = extend_env(initial_env, sym("hash-ref"),    primitive23("hash-ref",  o_hash_ref))
+initial_env = extend_env(initial_env, sym("hash-set!"),   primitive3("hash-set!",  o_hash_set))
 
 
 // Singletons
@@ -1159,6 +1186,4 @@ initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 // let expr36 = o_car(parse_tokens(read_from_string("(list 1 2)")))
 
 // let expr38 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (hash-ref h (quote foo)))")
-let expr38 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote foo))")
-let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux) 44)")
-console.log( core_eval(expr38) )
+console.log( core_eval(expr41) )

@@ -10,7 +10,8 @@
 //   npx eslint cesk-interpreter.mjs
 
 import util from 'node:util'
-function js_write(x)   { console.log(util.inspect(x,false,null,true)) }
+function js_format(x)  { return util.inspect(x,false,null,true) }
+function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
 
 
@@ -118,7 +119,6 @@ function o_length(xs) {
 }
 
 function o_is_list (xs) {
-    console.log(xs)
     return make_boolean( is_list(xs) )
 }
 
@@ -653,9 +653,9 @@ function parse_tokens(tokens) {
 
     push( "program" )
     while(!is_stack_empty()) {
-//        js_display("--")
-//        js_write(out)
-//        js_write(stack)
+        // js_display("--")
+        // js_write(out)
+        // js_write(stack)
         let inst = pop()
         let cmd  = inst[0]
         let data = inst[1]
@@ -691,27 +691,31 @@ function parse_tokens(tokens) {
             } else if (t === RPAREN) {
                 out = o_cons( reverse(out), data )
             } else if (t === LPAREN) {
-                if (peek() == DOT)
+                if (peek() === DOT)
                     throw new Error("parse_tokens: ( followed by .")
                 pushdata("list_suffix",data)
                 pushout("list_suffix")
             } else if (t === DOT) {
                 pushdata("list*_suffix",data)
+            } else if (t === QUOTE) {
+                pushout("list_suffix")
+                pushout("quote")
+                push("s")
             } else {
                 out = o_cons( t, out )
                 pushdata("list_suffix",data)
             }
-        } else if (cmd == "list*_suffix") {
+        } else if ((cmd == "list*_suffix") || (cmd == "list_suffix" )) {
             let t = read()
             if (t === EOT) {
                 throw new Error("unexpected end of tokens")
             } else if (t === RPAREN) {
                 throw new Error("unexpected )")
             } else if (t === LPAREN) {
-                if (peek() == RPAREN) {
+                if (peek() === RPAREN) {
                     read()
                     out = o_cons( reverse_star(out, o_null), data )
-                    if (!(peek(1) == RPAREN))
+                    if (!(peek() === RPAREN))
                         throw new Error("parse_tokens: ) expected")
                     read()
                 } else {
@@ -719,48 +723,24 @@ function parse_tokens(tokens) {
                 }
             } else if (t === DOT) {
                 throw new Error("unexpected .")
+            } else if (t === QUOTE) {
+                pushout("quote")
+                push("s")
             } else {
                 out = o_cons( reverse_star(out, t), data )
-                if (!(peek() == RPAREN))
+                if (!(peek() === RPAREN))
                     throw new Error("parse_tokens: ) expected")
                 read()
             }
         } else {
             throw new Error("parse_tokens: internal error - unknown command")
         }
-    }
-    
+    }    
     if (is_stack_empty()) {
         return reverse(out)
     } else {
         throw new Error("parse_tokens: unclosed parenthesis detected")
     }
-
-    
-    /*
-    while (i<n) {
-        let t = ts[i++]
-        if (t === LPAREN) {
-            push()
-        } else if (t === RPAREN) {
-            let sub = out
-            pop()
-            out = o_cons (reverse(sub),out)
-// TODO TODO
-//        } else if (t === quote_symbol) {
-//            let p = t[i] // safe to look ahead (undefined if i>=n )
-//            if (p === LPAREN) {
-//            }          
-        } else {
-            out = o_cons (t,out)
-        }
-    }
-    if (stack_i == 0) {
-        return reverse(out)
-    } else {
-        throw new Error("parse_tokens: unclosed parenthesis detected")
-    }
-   */
 }
         
             
@@ -791,15 +771,110 @@ function format_boolean (o) { return (o === o_false ? "#f" : "#t") }
 function format_string  (o) { return "\"" + string_string(o) + "\"" }
 
 
-function format_for_display(o) {
-    let sp = make_string_output_port()    
+function is_atom (o) {
+    let t = tag(o)
+    return (t == symbol_tag)    
+        || (t == number_tag)    
+        || (t == boolean_tag)   
+        || (t == string_tag)    
+        || (t == closure_tag)   
+        || (t == primitive_tag)  
+        || (t == continuation_tag)
+        || (t == hash_tag)
+        || (o === o_null)          
+        || (o === o_void)           
+        || (o === o_apply)          
+        || (o === o_callcc)         
+        || (o === o_call_prompt)
+}
 
+
+function format_atom (o) {
+    let t = tag(o)
+    if      (t == symbol_tag)         { return format_symbol(o)   }
+    else if (t == number_tag)         { return format_number(o)   }
+    else if (t == boolean_tag)        { return format_boolean(o)  }
+    else if (t == string_tag)         { return format_string(o)   }
+    else if (t == closure_tag)        { return "#<procedure>"     }
+    else if (t == primitive_tag)      { return "#<procedure:" + primtive_name(o) +  ">" }
+    else if (t == continuation_tag)   { return "#<continuation>" }
+    else if (t == hash_tag)           { return "#<hash>" }        
+    else if (o === o_null)            { return "()" }
+    else if (o === o_void)            { return "#<void>" }
+    else if (o === o_apply)           { return "#<procedure:apply>" }
+    else if (o === o_callcc)          { return "#<procedure:call/cc>" }
+    else if (o === o_call_prompt)     { return "#<procedure:call/prompt" }
+    else
+        throw new Error("format_atom: expected atom, got: " + js_format(o))
+}
+
+    
+
+function format(o,mode) {
+    // Output string
+    let sp = make_string_output_port()       
+    // Stack of commands
+    let stack   = []
+    let stack_i = 0
+    function push(cmd)          { stack[stack_i++] = [cmd,false]; }
+    function pushdata(cmd,data) { stack[stack_i++] = [cmd,data]; }
+    function pop()              { return stack[--stack_i] }
+    function is_stack_empty()   { return stack_i === 0 }
+
+    push("datum")    
+    while(!is_stack_empty()) {
+        // js_display("--")
+        // js_write(get_output_string(sp))
+        // js_write(o)
+        // js_write(stack)
+
+        let inst = pop()
+        let cmd  = inst[0]
+        let data = inst[1]
+
+        if (cmd === "datum") {
+            if(is_atom(o)) {
+                write_string(sp, format_atom(o))
+            } else if (is_pair(o)) {
+                write_string(sp, "(")
+                pushdata("tail", o_cdr(o))
+                o = o_car(o)
+                push("datum")
+            }            
+        } else if (cmd === "tail") {
+            o = data
+            if (is_pair(o)) {
+                write_string(sp," ")
+                pushdata("tail", o_cdr(o))
+                o = o_car(o)
+                push("datum")
+            } else if (o === o_null) {
+                write_string(sp,")")
+            } else if (is_atom(o)) {
+                write_string(sp, " . ")                
+                write_string(sp, format_atom(o))
+                write_string(sp, ")")
+                o = data
+            }
+        }
+    }
+    return get_output_string(sp)
+}
+
+
+    
+
+function format_for_display(o) {
     let stack = o_cons(["single", o], o_null)
+
     while (is_pair(stack)) {
         let cmd  = o_car(stack)[0]
         let data = o_car(stack)[1]
         stack = o_cdr(stack)
 
+        js_write(cmd)
+        js_write(data)
+        
         if (cmd == "single") {
             o = data
         } else if (cmd == "list_tail") {
@@ -835,32 +910,29 @@ function format_for_display(o) {
             else if (o === o_call_prompt)     { write_string(sp, "#<procedure:call/prompt") }
             else if (t === pair_tag)          {
                 if (is_list(o)) { // v
-                    console.log("o")
-                    console.log(o)
                     write_string(sp, "(")
                     cmd = "single"
                     stack = o_cons( ["list_tail", o], stack)
                 } // we know that the last pair doesn't end in null
                 else if (is_pair(o_cdr(o))) {
-                    throw new Error("B")
                     write_string(sp, "(")
                     cmd = "single"
                     let d = o_cdr(o)
-                    o = o_car(x)
+                    o = o_car(o)
                     stack = o_cons( ["list*_tail", d], stack)
                 } // we must be at the last pair of a non-list
                 else {
-                    throw new Error("C")
                     write_string(sp, "(")
                     cmd = "single"
                     let d = o_cdr(o)
-                    o = o_car(x)
+                    o = o_car(o)
                     stack = o_cons( ["cdr_of_pair", d], stack)
                 }
             } else {
                 console.log(o)
                 throw new Error("internal error: format_for_display is missing a case")
             }
+            
             o = undefined
             if (cmd == "cdr_of_pair") {
                 // console.log("X")
@@ -1352,7 +1424,6 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    1,
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
-/*
 let expr27 = parse1("(apply + (cons 1 (cons 2 null)))")
 let expr28 = parse1("(call/cc (lambda (x) x))")            // => some continuation
 let expr29 = parse1("(call/cc (lambda (k) (k 42)))")       // => 42
@@ -1372,7 +1443,6 @@ let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux
 let expr40 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (begin (hash-set! h (quote foo) 45) (hash-ref h (quote foo))))")
 let expr41 = parse1("(zero? 0)")
 
-*/
 
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
@@ -1486,5 +1556,10 @@ console.log( "--")
 
 //js_write( parse1( "(11 . 22)"))
 
-js_write( parse1( "( '(11 22 ))"))
+//js_write( parse1( "( '(11 22 ))"))
+
+// console.log( get_output_string(format_for_display( parse1( "(11 . 22)") )))
+
+// js_write(parse1("('22)"))
+console.log( format( parse1("('(22 . 23))")))
 

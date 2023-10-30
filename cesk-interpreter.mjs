@@ -636,8 +636,7 @@ function lex_string(sp) {
     }
 }
 
-
-function reverse(o) {
+function o_reverse(o) {
     let r = o_null
     while (!is_null(o)) {
         r = o_cons(o_car(o), r)
@@ -696,7 +695,7 @@ function parse_tokens(tokens) {
 
         if (cmd == "program") {
             if (peek() === EOT) 
-                return reverse(out)
+                return o_reverse(out)
             push("program")
             push("s")
         } else if (cmd == "s") {
@@ -723,7 +722,7 @@ function parse_tokens(tokens) {
             if (t === EOT) {
                 throw new Error("unexpected end of tokens")
             } else if (t === RPAREN) {
-                out = o_cons( reverse(out), data )
+                out = o_cons( o_reverse(out), data )
             } else if (t === LPAREN) {
                 if (peek() === DOT)
                     throw new Error("parse_tokens: ( followed by .")
@@ -774,7 +773,7 @@ function parse_tokens(tokens) {
         }
     }    
     if (is_stack_empty()) {
-        return reverse(out)
+        return o_reverse(out)
     } else {
         throw new Error("parse_tokens: unclosed parenthesis detected")
     }
@@ -1422,15 +1421,15 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 
 let initial_env = make_empty_env()
 
-initial_env = extend_env(initial_env, sym("pair?"),  primitive1("pair?",  o_is_pair))
-initial_env = extend_env(initial_env, sym("null?"),  primitive1("null?",  o_is_null))
-initial_env = extend_env(initial_env, sym("list?"),  primitive1("list?",  o_is_list))
-initial_env = extend_env(initial_env, sym("cons"),   primitive2("cons",   o_cons))
-initial_env = extend_env(initial_env, sym("car"),    primitive1("car",    o_car))
-initial_env = extend_env(initial_env, sym("cdr"),    primitive1("cdr",    o_cdr))
-initial_env = extend_env(initial_env, sym("list"),   primitiven("list",   o_list, -1))
-initial_env = extend_env(initial_env, sym("append"), primitiven("append", o_append, -1))
-
+initial_env = extend_env(initial_env, sym("pair?"),   primitive1("pair?",   o_is_pair))
+initial_env = extend_env(initial_env, sym("null?"),   primitive1("null?",   o_is_null))
+initial_env = extend_env(initial_env, sym("list?"),   primitive1("list?",   o_is_list))
+initial_env = extend_env(initial_env, sym("cons"),    primitive2("cons",    o_cons))
+initial_env = extend_env(initial_env, sym("car"),     primitive1("car",     o_car))
+initial_env = extend_env(initial_env, sym("cdr"),     primitive1("cdr",     o_cdr))
+initial_env = extend_env(initial_env, sym("list"),    primitiven("list",    o_list, -1))
+initial_env = extend_env(initial_env, sym("append"),  primitiven("append",  o_append, -1))
+initial_env = extend_env(initial_env, sym("reverse"), primitive1("reverse", o_reverse))
 
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
@@ -1484,10 +1483,12 @@ let expr53 = parse1("(append (list 11 22) (list 33 44))")
 let expr54 = parse1("(append (list 11 22) (list 33 44) (list 55 66))")
 let expr55 = parse1("(append (list 11 22) (list 33 44) (list 55 66) 77)")
 
-js_display(format(core_eval(expr51)))
-js_display(format(core_eval(expr52)))
-js_display(format(core_eval(expr53)))
-js_display(format(core_eval(expr54)))
-js_display(format(core_eval(expr55)))
+let expr56 = parse1("(reverse (reverse (list 11 22 33)))")
+
+js_display(format(core_eval(expr56)))
+//js_display(format(core_eval(expr52)))
+//js_display(format(core_eval(expr53)))
+//js_display(format(core_eval(expr54)))
+//js_display(format(core_eval(expr55)))
 
 

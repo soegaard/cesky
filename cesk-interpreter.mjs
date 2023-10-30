@@ -1430,6 +1430,7 @@ initial_env = extend_env(initial_env, sym("cdr"),     primitive1("cdr",     o_cd
 initial_env = extend_env(initial_env, sym("list"),    primitiven("list",    o_list, -1))
 initial_env = extend_env(initial_env, sym("append"),  primitiven("append",  o_append, -1))
 initial_env = extend_env(initial_env, sym("reverse"), primitive1("reverse", o_reverse))
+initial_env = extend_env(initial_env, sym("length"),  primitive1("length",  o_length))
 
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
@@ -1485,8 +1486,11 @@ let expr55 = parse1("(append (list 11 22) (list 33 44) (list 55 66) 77)")
 
 let expr56 = parse1("(reverse (reverse (list 11 22 33)))")
 
-js_display(format(core_eval(expr56)))
-//js_display(format(core_eval(expr52)))
+let expr57 = parse1("(length (list 11 22 33))")
+let expr58 = parse1("(length (list))")
+
+js_display(format(core_eval(expr57)))
+js_display(format(core_eval(expr58)))
 //js_display(format(core_eval(expr53)))
 //js_display(format(core_eval(expr54)))
 //js_display(format(core_eval(expr55)))

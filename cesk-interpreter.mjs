@@ -2,11 +2,16 @@
 
 // [ ] write/print/display
 // [ ] handle ' in reader
+// [ ] handle . in reader
 
 // Running
 //   node cesk-interpreter.mjs
 // Linting
 //   npx eslint cesk-interpreter.mjs
+
+import util from 'node:util'
+function js_write(x)   { console.log(util.inspect(x,false,null,true)) }
+function js_display(x) { console.log(x) }
 
 
 // TAGS
@@ -110,6 +115,11 @@ function js_list_length(xs) {
 
 function o_length(xs) {
     return make_number(js_list_length(xs))
+}
+
+function o_is_list (xs) {
+    console.log(xs)
+    return make_boolean( is_list(xs) )
 }
 
 function is_list(xs) {
@@ -462,6 +472,8 @@ function skip_atmosphere(sp) {
 // Tokens
 const LPAREN = Symbol.for("(")
 const RPAREN = Symbol.for(")")
+const DOT    = Symbol.for(".")
+const QUOTE  = Symbol.for("'")
 
 function lex(sp) {
     skip_atmosphere(sp)
@@ -472,6 +484,8 @@ function lex(sp) {
     else if (is_digit(c)) { return lex_number(sp) }
     else if (c == "(")    { read_char(sp) ; return LPAREN }
     else if (c == ")")    { read_char(sp) ; return RPAREN }
+    else if (c == ".")    { read_char(sp) ; return DOT }
+    else if (c == "'")    { read_char(sp) ; return QUOTE }
     else if (c == "\"")   { return lex_string(sp) }
     else if (c == "+") {
         read_char(sp)
@@ -507,9 +521,6 @@ function lex(sp) {
             back_char(sp)
             return lex_symbol(sp)           
         }
-    } else if (c == "'") {
-        read_char(sp)
-        return quote_symbol
     } else if (c == "`") {
         read_char(sp)
         return quasiquote_symbol
@@ -605,17 +616,128 @@ function reverse(o) {
     return r
 }
 
-function parse_tokens(ts) {
-    let out = o_null
+function reverse_star(o, last_cdr) {
+    let r = last_cdr
+    while (!is_null(o)) {
+        r = o_cons(o_car(o), r)
+        o = o_cdr(o)
+    }
+    return r
+}
 
+//  <program>    ::= <s> ...
+//  <s>          ::= <atom>
+//                |  (<s> ...) 
+//                |  (<s> ... . <s>) 
+//                |  '<s>
+
+function parse_tokens(tokens) {
+    // "input port" of tokens
     let i = 0
-    let n = ts.length
-
+    let n = tokens.length
+    const EOT = Symbol("End of tokens")
+    function peek () { return (i<n ? tokens[i] : EOT ) }
+    function skip () { if (i<n) i++ }
+    function read () { return (i<n ? tokens[i++] : EOT ) }
+    function done () { return i>=n }
+    // output        
+    let out = o_null // accumulator
+    // Stack of commands
     let stack   = []
     let stack_i = 0
-    function push() { stack[stack_i++] = out; out = o_null}
-    function pop()  { out = stack[--stack_i] }
+    function push(cmd)          { stack[stack_i++] = [cmd,false]; }
+    function pushout(cmd)       { stack[stack_i++] = [cmd,out]; out = o_null }
+    function pushdata(cmd,data) { stack[stack_i++] = [cmd,data]; }
+    function pop()              { return stack[--stack_i] }
+    function is_stack_empty()   { return stack_i === 0 }
+
+    push( "program" )
+    while(!is_stack_empty()) {
+//        js_display("--")
+//        js_write(out)
+//        js_write(stack)
+        let inst = pop()
+        let cmd  = inst[0]
+        let data = inst[1]
+
+        if (cmd == "program") {
+            if (peek() === EOT) 
+                return reverse(out)
+            push("program")
+            push("s")
+        } else if (cmd == "s") {
+            let t = read()
+            
+            if (t === LPAREN) {
+                if (peek() === DOT) 
+                    throw new Error("parse_tokens: unexpected .")
+                pushout("list_suffix")
+            } else if (t === RPAREN) {
+                throw new Error("parse_tokens: unexected )")
+            } else if (t === DOT) {
+                throw new Error("parse_tokens: unexpected .")
+            } else if (t === QUOTE) {
+                pushout("quote")
+                push("s")
+            } else {
+                out = o_cons( t, out )
+            }
+        } else if (cmd == "quote") {
+            out = o_cons( o_cons(quote_symbol, out), data )
+        } else if (cmd == "list_suffix") {
+            let t = read()
+            if (t === EOT) {
+                throw new Error("unexpected end of tokens")
+            } else if (t === RPAREN) {
+                out = o_cons( reverse(out), data )
+            } else if (t === LPAREN) {
+                if (peek() == DOT)
+                    throw new Error("parse_tokens: ( followed by .")
+                pushdata("list_suffix",data)
+                pushout("list_suffix")
+            } else if (t === DOT) {
+                pushdata("list*_suffix",data)
+            } else {
+                out = o_cons( t, out )
+                pushdata("list_suffix",data)
+            }
+        } else if (cmd == "list*_suffix") {
+            let t = read()
+            if (t === EOT) {
+                throw new Error("unexpected end of tokens")
+            } else if (t === RPAREN) {
+                throw new Error("unexpected )")
+            } else if (t === LPAREN) {
+                if (peek() == RPAREN) {
+                    read()
+                    out = o_cons( reverse_star(out, o_null), data )
+                    if (!(peek(1) == RPAREN))
+                        throw new Error("parse_tokens: ) expected")
+                    read()
+                } else {
+                    throw new Error("unexpected (")
+                }
+            } else if (t === DOT) {
+                throw new Error("unexpected .")
+            } else {
+                out = o_cons( reverse_star(out, t), data )
+                if (!(peek() == RPAREN))
+                    throw new Error("parse_tokens: ) expected")
+                read()
+            }
+        } else {
+            throw new Error("parse_tokens: internal error - unknown command")
+        }
+    }
     
+    if (is_stack_empty()) {
+        return reverse(out)
+    } else {
+        throw new Error("parse_tokens: unclosed parenthesis detected")
+    }
+
+    
+    /*
     while (i<n) {
         let t = ts[i++]
         if (t === LPAREN) {
@@ -638,6 +760,7 @@ function parse_tokens(ts) {
     } else {
         throw new Error("parse_tokens: unclosed parenthesis detected")
     }
+   */
 }
         
             
@@ -693,6 +816,7 @@ function format_for_display(o) {
             // console.log("o")
             // console.log(o)
             if (cmd == "cdr_of_pair") {
+                throw new Error("here")
                 write_string(" . ")
             }            
             let t = tag(o)
@@ -710,12 +834,15 @@ function format_for_display(o) {
             else if (o === o_callcc)          { write_string(sp, "#<procedure:call/cc>") }
             else if (o === o_call_prompt)     { write_string(sp, "#<procedure:call/prompt") }
             else if (t === pair_tag)          {
-                if (is_list(o)) { 
+                if (is_list(o)) { // v
+                    console.log("o")
+                    console.log(o)
                     write_string(sp, "(")
                     cmd = "single"
                     stack = o_cons( ["list_tail", o], stack)
                 } // we know that the last pair doesn't end in null
                 else if (is_pair(o_cdr(o))) {
+                    throw new Error("B")
                     write_string(sp, "(")
                     cmd = "single"
                     let d = o_cdr(o)
@@ -723,6 +850,7 @@ function format_for_display(o) {
                     stack = o_cons( ["list*_tail", d], stack)
                 } // we must be at the last pair of a non-list
                 else {
+                    throw new Error("C")
                     write_string(sp, "(")
                     cmd = "single"
                     let d = o_cdr(o)
@@ -1101,8 +1229,10 @@ function test_null_and_pairs() {
     let t6 = js_list_length(array_to_list([11,22,33])) == 3
     let a7 = list_to_array(array_to_list([11,22,33]))
     let t7 = (a7[0] == 11) && (a7[1] == 22) && (a7[2] == 33)
-    // console.log([t1,t2,t3,t4,t5,t6,t7])
-    return t1 && t2 && t3 && t4 && t5 && t6 && t7
+    let t8 = !is_list( o_cons(1,2) )
+    let t9 =  is_list( o_cons(1,o_null) )
+    // console.log([t1,t2,t3,t4,t5,t6,t7,t8,t9])
+    return t1 && t2 && t3 && t4 && t5 && t6 && t7 && t8 && t9
 }
 
 function test_symbols() {
@@ -1222,6 +1352,7 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    1,
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
+/*
 let expr27 = parse1("(apply + (cons 1 (cons 2 null)))")
 let expr28 = parse1("(call/cc (lambda (x) x))")            // => some continuation
 let expr29 = parse1("(call/cc (lambda (k) (k 42)))")       // => 42
@@ -1241,12 +1372,14 @@ let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux
 let expr40 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (begin (hash-set! h (quote foo) 45) (hash-ref h (quote foo))))")
 let expr41 = parse1("(zero? 0)")
 
+*/
+
 let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
 let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
-let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26,expr27,expr28,expr29]
-let exprs4 = [expr30,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr39]
-let exprs5 = [expr40] // ,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr29]
-let exprs_all = [exprs1,exprs2,exprs3,exprs4,exprs5]
+// let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26,expr27,expr28,expr29]
+// let exprs4 = [expr30,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr39]
+// let exprs5 = [expr40] // ,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr29]
+// let exprs_all = [exprs1,exprs2,exprs3,exprs4,exprs5]
 
 // console.log(top_env)
 
@@ -1272,6 +1405,7 @@ initial_env = extend_env(initial_env, sym("-"),           primitive2("-",       
 initial_env = extend_env(initial_env, sym("*"),           primitive2("*",          o_mult))
 initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
 initial_env = extend_env(initial_env, sym("list"),        primitiven("list",       o_list, -1))
+initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
 initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
 initial_env = extend_env(initial_env, sym("hash"),        primitiven("hash",       o_hash, -1))
 initial_env = extend_env(initial_env, sym("hash-ref"),    primitive23("hash-ref",  o_hash_ref))
@@ -1312,6 +1446,9 @@ initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 // let expr38 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (hash-ref h (quote foo)))")
 // console.log( core_eval(expr41) )
 
+//console.log( core_eval(parse1("(list? (quote (cons 11 22)))")))
+//console.log( core_eval(parse1("(let1 p (cons 77 88) (list? p))")))
+
 
 //console.log(format_for_display(parse1( "1" )))
 //console.log(format_for_display(parse1( "foo" )))
@@ -1321,11 +1458,33 @@ initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 //console.log(format_for_display(parse1( "null" )))
 //console.log(format_for_display(parse1( "()" )))
 
-console.log(format_for_display(parse1( "(11 22 (44 55) 33)" )))
-console.log(get_output_string(format_for_display(parse1( "(11 22 (44 55) 33)" ))))
+//console.log(format_for_display(parse1( "(11 22 (44 55) 33)" )))
+//console.log(get_output_string(format_for_display(parse1( "(11 22 (44 55) 33)" ))))
 
-console.log(format_for_display(parse1( "(11 (22 44) . 33)" )))
-console.log(get_output_string(format_for_display(parse1( "(11 (22 44) . 33)" ))))
+//console.log(format_for_display(parse1( "(11 (22 44) . 33)" )))
+//console.log(get_output_string(format_for_display(parse1( "(11 (22 44) . 33)" ))))
 
-console.log(get_output_string(format_for_display(parse1( "(11 (quote (22 44)) . 33)" ))))
+//console.log(get_output_string(format_for_display(parse1( "(11 (quote (22 44)) . 33)" ))))
+
+// console.log(parse1( "(11 . 22)" ))
+//console.log(get_output_string(format_for_display(parse1( "(11 . 22)" ))))
+
+
+/*
+console.log(parse1( "11" ))
+console.log( "--")
+console.log(parse1( "()" ))
+console.log( "--")
+console.log(parse1( "(22)" ))
+console.log( "--")
+console.log(parse1( "(33 44)" ))
+console.log( "--")
+*/
+// console.log(util.inspect(parse1( "(55 (66) 77)" ), false, null, true))
+
+// js_write( parse1( "(11 foo \"bar\" #t #f () (nested list))"))
+
+//js_write( parse1( "(11 . 22)"))
+
+js_write( parse1( "( '(11 22 ))"))
 

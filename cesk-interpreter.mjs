@@ -1,9 +1,5 @@
 // CESK-interpreter in ES6 JavaScript
 
-// [ ] write/print/display
-// [ ] handle ' in reader
-// [ ] handle . in reader
-
 // Running
 //   node cesk-interpreter.mjs
 // Linting
@@ -99,9 +95,12 @@ function is_void(o) { return o === o_void }
 const o_null = [null_tag]  // unique null value
 function is_null(o)    { return o === o_null }
 function is_pair(o)    { return Array.isArray(o) && (tag(o) === pair_tag) }
+
+function o_is_pair(o)  { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
 function o_cons(o1,o2) { return [pair_tag, o1, o2] }
 function o_car(o)      { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
 function o_cdr(o)      { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
+
 function o_list(os)    { return os }
 
 
@@ -631,8 +630,11 @@ function reverse_star(o, last_cdr) {
 //                |  (<s> ... . <s>) 
 //                |  '<s>
 
+// https://docs.racket-lang.org/zuo/reader.html
+
 function parse_tokens(tokens) {
     // "input port" of tokens
+    js_write(tokens)
     let i = 0
     let n = tokens.length
     const EOT = Symbol("End of tokens")
@@ -653,12 +655,13 @@ function parse_tokens(tokens) {
 
     push( "program" )
     while(!is_stack_empty()) {
-        // js_display("--")
-        // js_write(out)
-        // js_write(stack)
+        js_display("--")
+        js_write(out)
+        js_write(stack)
         let inst = pop()
         let cmd  = inst[0]
         let data = inst[1]
+        js_display(cmd)
 
         if (cmd == "program") {
             if (peek() === EOT) 
@@ -698,14 +701,15 @@ function parse_tokens(tokens) {
             } else if (t === DOT) {
                 pushdata("list*_suffix",data)
             } else if (t === QUOTE) {
+                console.log("list quote")
                 pushout("list_suffix")
-                pushout("quote")
+                push("quote")
                 push("s")
             } else {
                 out = o_cons( t, out )
                 pushdata("list_suffix",data)
             }
-        } else if ((cmd == "list*_suffix") || (cmd == "list_suffix" )) {
+        } else if (cmd == "list*_suffix") {
             let t = read()
             if (t === EOT) {
                 throw new Error("unexpected end of tokens")
@@ -724,6 +728,8 @@ function parse_tokens(tokens) {
             } else if (t === DOT) {
                 throw new Error("unexpected .")
             } else if (t === QUOTE) {
+                console.log("list* quote")
+                pushdata("list*_suffix",data)
                 pushout("quote")
                 push("s")
             } else {
@@ -1260,7 +1266,7 @@ function core_eval(expr) {
             if (state_m(s) === o_null) { 
                 return state_v(s)
             } else {
-                console.log("core_eval: discarding tag form meta continuations")
+                // console.log("core_eval: discarding tag form meta continuations")
                 set_state_k(s,o_car(o_car(state_m(s))))
                 set_state_m(s,o_cdr(state_m(s)))
             }
@@ -1424,6 +1430,8 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    1,
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
+
+/*
 let expr27 = parse1("(apply + (cons 1 (cons 2 null)))")
 let expr28 = parse1("(call/cc (lambda (x) x))")            // => some continuation
 let expr29 = parse1("(call/cc (lambda (k) (k 42)))")       // => 42
@@ -1438,15 +1446,15 @@ let expr34 = parse1("((call/prompt (lambda () (call/cc (lambda (k) k))) (quote t
 let expr35 = parse1("(call/cc (lambda (k) k))")
 let expr36 = parse1("((call/cc (lambda (k) k)) list)")
 let expr37 = parse1("(list 1 2 3)")
-let expr38 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote foo))")
-let expr39 = parse1("(hash-ref (hash (quote foo) 42 (quote bar) 43 )  (quote qux) 44)")
-let expr40 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (begin (hash-set! h (quote foo) 45) (hash-ref h (quote foo))))")
-let expr41 = parse1("(zero? 0)")
+*/
+// let expr38 = parse1("(hash-ref (hash 'foo 42 'bar 43 )  'foo)")
+// let expr39 = parse1("(hash-ref (hash 'foo 42 'bar 43 )  'qux 44)")
+// let expr40 = parse1("(let1 h (hash 'foo 42 'bar 43) (begin (hash-set! h 'foo 45) (hash-ref h 'foo)))")
+//let expr41 = parse1("(zero? 0)")
 
-
-let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
-let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
-// let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26,expr27,expr28,expr29]
+//let exprs1 = [expr0,expr1,expr2,expr3,expr4,expr5,expr6,expr7,expr8,expr9]
+//let exprs2 = [expr10,expr11,expr12,expr13,expr14,expr15,expr16,expr17,expr18,expr19]
+//let exprs3 = [expr20,expr21,expr22,expr23,expr24,expr25,expr26,expr27,expr28,expr29]
 // let exprs4 = [expr30,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr39]
 // let exprs5 = [expr40] // ,expr31,expr32,expr33,expr34,expr35,expr36,expr37,expr38,expr29]
 // let exprs_all = [exprs1,exprs2,exprs3,exprs4,exprs5]
@@ -1467,14 +1475,18 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 // mask -2 = 1 or more
 
 let initial_env = make_empty_env()
+
+initial_env = extend_env(initial_env, sym("pair?"),       primitive1("pair?",      o_is_pair))
 initial_env = extend_env(initial_env, sym("cons"),        primitive2("cons",       o_cons))
 initial_env = extend_env(initial_env, sym("car"),         primitive1("car",        o_car))
 initial_env = extend_env(initial_env, sym("cdr"),         primitive1("cdr",        o_cdr))
+initial_env = extend_env(initial_env, sym("list"),        primitiven("list",       o_list, -1))
+
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
 initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
 initial_env = extend_env(initial_env, sym("*"),           primitive2("*",          o_mult))
 initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
-initial_env = extend_env(initial_env, sym("list"),        primitiven("list",       o_list, -1))
+
 initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
 initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
 initial_env = extend_env(initial_env, sym("hash"),        primitiven("hash",       o_hash, -1))
@@ -1489,77 +1501,20 @@ initial_env = extend_env(initial_env, sym("apply"),       o_apply)
 initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
 initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 
-// console.log(lookup(top_env, sym("cons")))
-
-// console.log( core_eval(expr26) )
 
 // console.log( read_from_string( " ( foo bar 43 baz + +3 -10 -a - 10. 11.1 12.34 .34 .bar ..4 ... #t #f oo ' ` , ,@ )"))
 
-// console.log(           parse_tokens(read_from_string( "(+ 1 2)")))
-
-// console.log( core_eval(o_car(parse_tokens(read_from_string( "(+ (+ 1 2) (+ 10 20))")))))
-
-//console.log( core_eval(o_car(parse_tokens(read_from_string( 
-//    "(begin ; this is a comment \n \
-//            ; another comment \n \
-//        (define fact (lambda (n) (if (zero? n) 1 (* n (fact (- n 1)))))) \
-//        (fact 5))"))))
-
-// console.log( o_car( parse_tokens(read_from_string( '("foo\\bar" 3)'))))
-
-// let expr32 = o_car(parse_tokens(read_from_string("(quote tag)")))   
-
-// console.log(expr32)
-
-// let expr36 = o_car(parse_tokens(read_from_string("(list 1 2)")))
-
-// let expr38 = parse1("(let1 h (hash (quote foo) 42 (quote bar) 43) (hash-ref h (quote foo)))")
-// console.log( core_eval(expr41) )
-
-//console.log( core_eval(parse1("(list? (quote (cons 11 22)))")))
-//console.log( core_eval(parse1("(let1 p (cons 77 88) (list? p))")))
+//let expr42 = parse1("(let1 h (hash 'foo 42 'bar 43) 44)")
+//js_write(expr42)
+//js_display(format(expr42))
+//js_display(format(core_eval(expr42)))
 
 
-//console.log(format_for_display(parse1( "1" )))
-//console.log(format_for_display(parse1( "foo" )))
-//console.log(format_for_display(parse1( "\"foo\"" )))
-//console.log(format_for_display(parse1( "#t" )))
-//console.log(format_for_display(parse1( "#f" )))
-//console.log(format_for_display(parse1( "null" )))
-//console.log(format_for_display(parse1( "()" )))
-
-//console.log(format_for_display(parse1( "(11 22 (44 55) 33)" )))
-//console.log(get_output_string(format_for_display(parse1( "(11 22 (44 55) 33)" ))))
-
-//console.log(format_for_display(parse1( "(11 (22 44) . 33)" )))
-//console.log(get_output_string(format_for_display(parse1( "(11 (22 44) . 33)" ))))
-
-//console.log(get_output_string(format_for_display(parse1( "(11 (quote (22 44)) . 33)" ))))
-
-// console.log(parse1( "(11 . 22)" ))
-//console.log(get_output_string(format_for_display(parse1( "(11 . 22)" ))))
+//let expr43 = parse1("(a 'b)")
+// js_write(expr43)
+//js_display(format(expr43))
 
 
-/*
-console.log(parse1( "11" ))
-console.log( "--")
-console.log(parse1( "()" ))
-console.log( "--")
-console.log(parse1( "(22)" ))
-console.log( "--")
-console.log(parse1( "(33 44)" ))
-console.log( "--")
-*/
-// console.log(util.inspect(parse1( "(55 (66) 77)" ), false, null, true))
-
-// js_write( parse1( "(11 foo \"bar\" #t #f () (nested list))"))
-
-//js_write( parse1( "(11 . 22)"))
-
-//js_write( parse1( "( '(11 22 ))"))
-
-// console.log( get_output_string(format_for_display( parse1( "(11 . 22)") )))
-
-// js_write(parse1("('22)"))
-console.log( format( parse1("('(22 . 23))")))
-
+let expr42 = parse1("(pair? 42)")
+let expr43 = parse1("(pair? (cons 1 2))")
+js_display(format(core_eval(expr43)))

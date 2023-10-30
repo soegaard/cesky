@@ -225,7 +225,8 @@ function o_append(os) {
 
 
 // NUMBERS
-function is_number(o) { return Array.isArray(o) && (tag(o) === number_tag) }
+function is_number(o)   { return              Array.isArray(o) && (tag(o) === number_tag)  }
+function o_is_number(o) { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
 
 function make_number(x)  { return [number_tag, x] }
 function number_value(o) { return o[1] }
@@ -1476,6 +1477,7 @@ initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_
 initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
 initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
 
+initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",     o_is_number))
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
 initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
@@ -1539,9 +1541,12 @@ let expr61 = parse1("(list-ref (cons 0 (cons 1 2)) 1)")
 
 let expr62 = parse1("(list-set (list 0 1 2 3 4 5 6 7) 2 22)")
 
+let expr63 = parse1("(number? 42)")
+let expr64 = parse1("(number? #t)")
 
-js_display(format(core_eval(expr62)))
-//js_display(format(core_eval(expr60)))
+
+js_display(format(core_eval(expr63)))
+js_display(format(core_eval(expr64)))
 //js_display(format(core_eval(expr61)))
 //js_display(format(core_eval(expr53)))
 //js_display(format(core_eval(expr54)))

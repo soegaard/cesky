@@ -105,10 +105,9 @@ function set_car(o,a)   { o[1] = a }
 function set_cdr(o,d)   { o[2] = d }
 function o_set_car(o,a) { o[1] = a ; return o_void }
 function o_set_cdr(o,d) { o[2] = d ; return o_void }
+function o_list(os)     { return os }
 
-
-function o_list(os)    { return os }
-
+function o_length(xs)   { return make_number(js_list_length(xs)) }
 function js_list_length(xs) {
     let n = 0
     while (xs != o_null) {
@@ -118,9 +117,9 @@ function js_list_length(xs) {
     return n
 }
 
-function o_length(xs)   { return make_number(js_list_length(xs)) }
-function o_is_list (xs) { return make_boolean(is_list(xs))}
-
+function o_is_list (xs) {
+    return make_boolean(is_list(xs))
+}
 function is_list(xs) {
     if (xs === o_null)
         return true
@@ -128,6 +127,21 @@ function is_list(xs) {
         xs = o_cdr(xs)
     }
     return (xs === o_null)
+}
+
+function o_list_ref(xs,index) {
+    if (!is_number(index))
+        throw new Error("list-ref: not a non-negative integer")
+    let i = number_value(index)
+    if (i<0)
+        throw new Error("list-ref: not a non-negative integer" + i)
+    while ((i>0) && (tag(xs) == pair_tag)) {
+        xs = o_cdr(xs)
+        i--
+    }
+    if (!(tag(xs) === pair_tag))
+        throw new Error("found a non-pair: " + format(xs))
+    return o_car(xs)
 }
 
 function array_to_list(axs) {
@@ -1421,16 +1435,17 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 
 let initial_env = make_empty_env()
 
-initial_env = extend_env(initial_env, sym("pair?"),   primitive1("pair?",   o_is_pair))
-initial_env = extend_env(initial_env, sym("null?"),   primitive1("null?",   o_is_null))
-initial_env = extend_env(initial_env, sym("list?"),   primitive1("list?",   o_is_list))
-initial_env = extend_env(initial_env, sym("cons"),    primitive2("cons",    o_cons))
-initial_env = extend_env(initial_env, sym("car"),     primitive1("car",     o_car))
-initial_env = extend_env(initial_env, sym("cdr"),     primitive1("cdr",     o_cdr))
-initial_env = extend_env(initial_env, sym("list"),    primitiven("list",    o_list, -1))
-initial_env = extend_env(initial_env, sym("append"),  primitiven("append",  o_append, -1))
-initial_env = extend_env(initial_env, sym("reverse"), primitive1("reverse", o_reverse))
-initial_env = extend_env(initial_env, sym("length"),  primitive1("length",  o_length))
+initial_env = extend_env(initial_env, sym("pair?"),     primitive1("pair?",   o_is_pair))
+initial_env = extend_env(initial_env, sym("null?"),     primitive1("null?",   o_is_null))
+initial_env = extend_env(initial_env, sym("list?"),     primitive1("list?",   o_is_list))
+initial_env = extend_env(initial_env, sym("cons"),      primitive2("cons",    o_cons))
+initial_env = extend_env(initial_env, sym("car"),       primitive1("car",     o_car))
+initial_env = extend_env(initial_env, sym("cdr"),       primitive1("cdr",     o_cdr))
+initial_env = extend_env(initial_env, sym("list"),      primitiven("list",    o_list, -1))
+initial_env = extend_env(initial_env, sym("append"),    primitiven("append",  o_append, -1))
+initial_env = extend_env(initial_env, sym("reverse"),   primitive1("reverse", o_reverse))
+initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_length))
+initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
 
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
@@ -1489,8 +1504,13 @@ let expr56 = parse1("(reverse (reverse (list 11 22 33)))")
 let expr57 = parse1("(length (list 11 22 33))")
 let expr58 = parse1("(length (list))")
 
-js_display(format(core_eval(expr57)))
-js_display(format(core_eval(expr58)))
+let expr59 = parse1("(list-ref (list 0 1 2 3 4 5 6 7) 0)")
+let expr60 = parse1("(list-ref (list 0 1 2 3 4 5 6 7) 7)")
+let expr61 = parse1("(list-ref (cons 0 (cons 1 2)) 1)")
+
+js_display(format(core_eval(expr59)))
+js_display(format(core_eval(expr60)))
+js_display(format(core_eval(expr61)))
 //js_display(format(core_eval(expr53)))
 //js_display(format(core_eval(expr54)))
 //js_display(format(core_eval(expr55)))

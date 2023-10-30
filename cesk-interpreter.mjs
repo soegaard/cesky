@@ -93,17 +93,21 @@ function is_void(o) { return o === o_void }
 // NULL, PAIRS, LISTS
 
 const o_null = [null_tag]  // unique null value
-function is_null(o)    { return o === o_null }
-function is_pair(o)    { return Array.isArray(o) && (tag(o) === pair_tag) }
+function is_null(o)     { return o === o_null }
+function is_pair(o)     { return Array.isArray(o) && (tag(o) === pair_tag) }
 
-function o_is_pair(o)  { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
-function o_is_null(o)  { return make_boolean(o === o_null) }
-function o_cons(o1,o2) { return [pair_tag, o1, o2] }
-function o_car(o)      { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
-function o_cdr(o)      { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
+function o_is_pair(o)   { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
+function o_is_null(o)   { return make_boolean(o === o_null) }
+function o_cons(o1,o2)  { return [pair_tag, o1, o2] }
+function o_car(o)       { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
+function o_cdr(o)       { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
+function set_car(o,a)   { o[1] = a }
+function set_cdr(o,d)   { o[2] = d }
+function o_set_car(o,a) { o[1] = a ; return o_void }
+function o_set_cdr(o,d) { o[2] = d ; return o_void }
+
 
 function o_list(os)    { return os }
-
 
 function js_list_length(xs) {
     let n = 0
@@ -114,13 +118,8 @@ function js_list_length(xs) {
     return n
 }
 
-function o_length(xs) {
-    return make_number(js_list_length(xs))
-}
-
-function o_is_list (xs) {
-    return make_boolean( is_list(xs) )
-}
+function o_length(xs)   { return make_number(js_list_length(xs)) }
+function o_is_list (xs) { return make_boolean(is_list(xs))}
 
 function is_list(xs) {
     if (xs === o_null)
@@ -150,6 +149,38 @@ function list_to_array(xs) {
     }
     return axs
 }
+
+function o_append(os) {
+    let first = o_null
+    let last  = false
+    let l = os
+    while (   (tag(      l) === pair_tag)
+           && (tag(o_cdr(l)) == pair_tag)) {
+        // two or more arguments
+        let a = o_car(l)
+        while ( tag(a) === pair_tag ) {
+            let p = o_cons(o_car(a), o_null)
+            if (last)
+                set_cdr(last,p)
+            else
+                first = p
+            last = p
+            a = o_cdr(a)
+        }
+        if (!(a === o_null))
+            error_arg("append", "list",o_car(l))
+        l = o_cdr(l)
+    }
+    if (tag(l) === pair_tag) {
+        if (last)
+            set_cdr(last, o_car(l))
+        else
+            first = o_car(l)
+    }
+    return first
+}
+                    
+
 
 // NUMBERS
 function is_number(o) { return Array.isArray(o) && (tag(o) === number_tag) }
@@ -484,7 +515,6 @@ function lex(sp) {
     else if (is_digit(c)) { return lex_number(sp) }
     else if (c == "(")    { read_char(sp) ; return LPAREN }
     else if (c == ")")    { read_char(sp) ; return RPAREN }
-    else if (c == ".")    { read_char(sp) ; return DOT }
     else if (c == "'")    { read_char(sp) ; return QUOTE }
     else if (c == "\"")   { return lex_string(sp) }
     else if (c == "+") {
@@ -509,8 +539,8 @@ function lex(sp) {
             back_char(sp)
             return lex_number(sp)
         } else {
-            back_char(sp)
-            return lex_symbol(sp)
+            // back_char(sp)  XXX
+            return DOT
         }
     } else if (c == "#") {
         read_char(sp)
@@ -635,7 +665,7 @@ function reverse_star(o, last_cdr) {
 
 function parse_tokens(tokens) {
     // "input port" of tokens
-    js_write(tokens)
+    // js_write(tokens)
     let i = 0
     let n = tokens.length
     const EOT = Symbol("End of tokens")
@@ -656,13 +686,13 @@ function parse_tokens(tokens) {
 
     push( "program" )
     while(!is_stack_empty()) {
-        js_display("--")
-        js_write(out)
-        js_write(stack)
+        // js_display("--")
+        // js_write(out)
+        // js_write(stack)
         let inst = pop()
         let cmd  = inst[0]
         let data = inst[1]
-        js_display(cmd)
+        // js_display(cmd)
 
         if (cmd == "program") {
             if (peek() === EOT) 
@@ -803,7 +833,7 @@ function format_atom (o) {
     else if (t == boolean_tag)        { return format_boolean(o)  }
     else if (t == string_tag)         { return format_string(o)   }
     else if (t == closure_tag)        { return "#<procedure>"     }
-    else if (t == primitive_tag)      { return "#<procedure:" + primtive_name(o) +  ">" }
+    else if (t == primitive_tag)      { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)   { return "#<continuation>" }
     else if (t == hash_tag)           { return "#<hash>" }        
     else if (o === o_null)            { return "()" }
@@ -871,91 +901,6 @@ function format(o,mode) {
 
     
 
-function format_for_display(o) {
-    let stack = o_cons(["single", o], o_null)
-
-    while (is_pair(stack)) {
-        let cmd  = o_car(stack)[0]
-        let data = o_car(stack)[1]
-        stack = o_cdr(stack)
-
-        js_write(cmd)
-        js_write(data)
-        
-        if (cmd == "single") {
-            o = data
-        } else if (cmd == "list_tail") {
-            if (is_null(data)) {
-                write_string(sp, ") ")
-                o = undefined
-            } else  {
-                o    = o_car(data)
-                data = o_cdr(data)
-                stack = o_cons( ["list_tail", data], stack )
-            }
-        }            
-        while (!(o === undefined)) {
-            // console.log("o")
-            // console.log(o)
-            if (cmd == "cdr_of_pair") {
-                throw new Error("here")
-                write_string(" . ")
-            }            
-            let t = tag(o)
-            if      (t == symbol_tag)         { write_string(sp, format_symbol(o))  }
-            else if (t == number_tag)         { write_string(sp, format_number(o))  }
-            else if (t == boolean_tag)        { write_string(sp, format_boolean(o)) }
-            else if (t == string_tag)         { write_string(sp, format_string(o))  }
-            else if (t == closure_tag)        { write_string(sp, "#<procedure>")    }
-            else if (t == primitive_tag)      { write_string(sp, "#<procedure:" + primtive_name(o) +  ">") }
-            else if (t == continuation_tag)   { write_string(sp, "#<continuation>") }
-            else if (t == hash_tag)           { write_string(sp, "#<hash>") }        
-            else if (o === o_null)            { write_string(sp, "()") }
-            else if (o === o_void)            { write_string(sp, "#<void>") }
-            else if (o === o_apply)           { write_string(sp, "#<procedure:apply>") }
-            else if (o === o_callcc)          { write_string(sp, "#<procedure:call/cc>") }
-            else if (o === o_call_prompt)     { write_string(sp, "#<procedure:call/prompt") }
-            else if (t === pair_tag)          {
-                if (is_list(o)) { // v
-                    write_string(sp, "(")
-                    cmd = "single"
-                    stack = o_cons( ["list_tail", o], stack)
-                } // we know that the last pair doesn't end in null
-                else if (is_pair(o_cdr(o))) {
-                    write_string(sp, "(")
-                    cmd = "single"
-                    let d = o_cdr(o)
-                    o = o_car(o)
-                    stack = o_cons( ["list*_tail", d], stack)
-                } // we must be at the last pair of a non-list
-                else {
-                    write_string(sp, "(")
-                    cmd = "single"
-                    let d = o_cdr(o)
-                    o = o_car(o)
-                    stack = o_cons( ["cdr_of_pair", d], stack)
-                }
-            } else {
-                console.log(o)
-                throw new Error("internal error: format_for_display is missing a case")
-            }
-            
-            o = undefined
-            if (cmd == "cdr_of_pair") {
-                // console.log("X")
-                write_string(sp, ")" )
-            } else if (cmd == "list_tail") {
-                // console.log("Y")
-                if (!is_null(data))
-                    write_string(sp, " ")
-            } else if (cmd == "list_tail*") {
-                // console.log("Z")
-                write_string(sp, " " )
-            }
-        }
-    }
-    return sp
-}
 
 
 // ENVIRONMENT
@@ -1477,14 +1422,16 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 
 let initial_env = make_empty_env()
 
-initial_env = extend_env(initial_env, sym("pair?"),       primitive1("pair?",      o_is_pair))
-initial_env = extend_env(initial_env, sym("null?"),       primitive1("null?",      o_is_null))
-initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
+initial_env = extend_env(initial_env, sym("pair?"),  primitive1("pair?",  o_is_pair))
+initial_env = extend_env(initial_env, sym("null?"),  primitive1("null?",  o_is_null))
+initial_env = extend_env(initial_env, sym("list?"),  primitive1("list?",  o_is_list))
+initial_env = extend_env(initial_env, sym("cons"),   primitive2("cons",   o_cons))
+initial_env = extend_env(initial_env, sym("car"),    primitive1("car",    o_car))
+initial_env = extend_env(initial_env, sym("cdr"),    primitive1("cdr",    o_cdr))
+initial_env = extend_env(initial_env, sym("list"),   primitiven("list",   o_list, -1))
+initial_env = extend_env(initial_env, sym("append"), primitiven("append", o_append, -1))
 
-initial_env = extend_env(initial_env, sym("cons"),        primitive2("cons",       o_cons))
-initial_env = extend_env(initial_env, sym("car"),         primitive1("car",        o_car))
-initial_env = extend_env(initial_env, sym("cdr"),         primitive1("cdr",        o_cdr))
-initial_env = extend_env(initial_env, sym("list"),        primitiven("list",       o_list, -1))
+
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
 initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
@@ -1531,10 +1478,16 @@ let expr48 = parse1("(list? (cons 11 null))")
 let expr49 = parse1("(list? (cons 11 (cons 22 null)))")
 let expr50 = parse1("(list? (cons 11 (cons 22 33)))")
 
-js_display(format(core_eval(expr46)))
-js_display(format(core_eval(expr47)))
-js_display(format(core_eval(expr48)))
-js_display(format(core_eval(expr49)))
-js_display(format(core_eval(expr50)))
+let expr51 = parse1("(append)")
+let expr52 = parse1("(append (list 11 22))")
+let expr53 = parse1("(append (list 11 22) (list 33 44))")
+let expr54 = parse1("(append (list 11 22) (list 33 44) (list 55 66))")
+let expr55 = parse1("(append (list 11 22) (list 33 44) (list 55 66) 77)")
+
+js_display(format(core_eval(expr51)))
+js_display(format(core_eval(expr52)))
+js_display(format(core_eval(expr53)))
+js_display(format(core_eval(expr54)))
+js_display(format(core_eval(expr55)))
 
 

@@ -140,9 +140,37 @@ function o_list_ref(xs,index) {
         i--
     }
     if (!(tag(xs) === pair_tag))
-        throw new Error("found a non-pair: " + format(xs))
+        throw new Error("list-ref: found a non-pair: " + format(xs))
     return o_car(xs)
 }
+
+function o_list_set(xs, index, value) {
+    if (!is_number(index))
+        throw new Error("list-set: not a non-negative integer")
+    let i = number_value(index)
+    if (i<0)
+        throw new Error("list-set: not a non-negative integer" + i)
+    if ( (i===0) && (tag(xs) == pair_tag))
+        return o_cons(value, o_cdr(xs))
+    let first = false
+    let last  = false
+    while ((i>0) && (tag(xs) == pair_tag)) {
+        let p = o_cons(o_car(xs), o_null)
+        if (!first)
+            first = p
+        else
+            set_cdr(last,p)
+        last = p
+        xs = o_cdr(xs)
+        i--
+    }
+    if (!(tag(xs) === pair_tag))
+        throw new Error("list-set: found a non-pair: " + format(xs))
+    set_cdr(last,o_cons(value, o_cdr(xs)))
+    
+    return first
+}
+
 
 function array_to_list(axs) {
     let n = axs.length
@@ -1446,6 +1474,7 @@ initial_env = extend_env(initial_env, sym("append"),    primitiven("append",  o_
 initial_env = extend_env(initial_env, sym("reverse"),   primitive1("reverse", o_reverse))
 initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_length))
 initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
+initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
 
 
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
@@ -1508,9 +1537,12 @@ let expr59 = parse1("(list-ref (list 0 1 2 3 4 5 6 7) 0)")
 let expr60 = parse1("(list-ref (list 0 1 2 3 4 5 6 7) 7)")
 let expr61 = parse1("(list-ref (cons 0 (cons 1 2)) 1)")
 
-js_display(format(core_eval(expr59)))
-js_display(format(core_eval(expr60)))
-js_display(format(core_eval(expr61)))
+let expr62 = parse1("(list-set (list 0 1 2 3 4 5 6 7) 2 22)")
+
+
+js_display(format(core_eval(expr62)))
+//js_display(format(core_eval(expr60)))
+//js_display(format(core_eval(expr61)))
 //js_display(format(core_eval(expr53)))
 //js_display(format(core_eval(expr54)))
 //js_display(format(core_eval(expr55)))

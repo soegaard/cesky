@@ -97,6 +97,7 @@ function is_null(o)    { return o === o_null }
 function is_pair(o)    { return Array.isArray(o) && (tag(o) === pair_tag) }
 
 function o_is_pair(o)  { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
+function o_is_null(o)  { return make_boolean(o === o_null) }
 function o_cons(o1,o2) { return [pair_tag, o1, o2] }
 function o_car(o)      { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
 function o_cdr(o)      { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
@@ -1477,6 +1478,9 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 let initial_env = make_empty_env()
 
 initial_env = extend_env(initial_env, sym("pair?"),       primitive1("pair?",      o_is_pair))
+initial_env = extend_env(initial_env, sym("null?"),       primitive1("null?",      o_is_null))
+initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
+
 initial_env = extend_env(initial_env, sym("cons"),        primitive2("cons",       o_cons))
 initial_env = extend_env(initial_env, sym("car"),         primitive1("car",        o_car))
 initial_env = extend_env(initial_env, sym("cdr"),         primitive1("cdr",        o_cdr))
@@ -1517,4 +1521,20 @@ initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
 
 let expr42 = parse1("(pair? 42)")
 let expr43 = parse1("(pair? (cons 1 2))")
-js_display(format(core_eval(expr43)))
+
+let expr44 = parse1("(null? null)")
+let expr45 = parse1("(null? 42)")
+
+let expr46 = parse1("(list? null)")
+let expr47 = parse1("(list? 42)")
+let expr48 = parse1("(list? (cons 11 null))")
+let expr49 = parse1("(list? (cons 11 (cons 22 null)))")
+let expr50 = parse1("(list? (cons 11 (cons 22 33)))")
+
+js_display(format(core_eval(expr46)))
+js_display(format(core_eval(expr47)))
+js_display(format(core_eval(expr48)))
+js_display(format(core_eval(expr49)))
+js_display(format(core_eval(expr50)))
+
+

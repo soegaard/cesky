@@ -228,11 +228,17 @@ function o_append(os) {
 function is_number(o)   { return              Array.isArray(o) && (tag(o) === number_tag)  }
 function o_is_number(o) { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
 
-function make_number(x)  { return [number_tag, x] }
-function number_value(o) { return o[1] }
-function o_plus(o1, o2)  { return make_number(o1[1] + o2[1]) }
-function o_minus(o1, o2) { return make_number(o1[1] - o2[1]) }
-function o_mult(o1, o2)  { return make_number(o1[1] * o2[1]) }
+function make_number(x)   { return [number_tag, x] }
+function number_value(o)  { return o[1] }
+function o_plus(o1, o2)   { return make_number(o1[1] + o2[1]) }
+function o_minus(o1, o2)  { return make_number(o1[1] - o2[1]) }
+function o_mult(o1, o2)   { return make_number(o1[1] * o2[1]) }
+function o_div(o1, o2)    { return make_number(o1[1] / o2[1]) }
+function o_modulo(o1, o2) { return make_number( ((o1[1] % o2[1]) + o2[1]) % o2[1]) }
+function o_remainder(o1, o2) { return make_number(o1[1] % o2[1]) }
+function o_quotient(o1, o2)  { return make_number(Math.floor(o1[1] / o2[1])) }
+
+
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
 
 // HASH
@@ -1477,11 +1483,16 @@ initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_
 initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
 initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
 
-initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",     o_is_number))
-
+initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",    o_is_number))
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
 initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
 initial_env = extend_env(initial_env, sym("*"),           primitive2("*",          o_mult))
+initial_env = extend_env(initial_env, sym("/"),           primitive2("/",          o_div))
+initial_env = extend_env(initial_env, sym("quotient"),    primitive2("quotient",   o_quotient))
+initial_env = extend_env(initial_env, sym("remainder"),   primitive2("remainder",  o_remainder))
+initial_env = extend_env(initial_env, sym("modulo"),      primitive2("modulo",     o_modulo))
+
+
 initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
 
 initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
@@ -1544,11 +1555,15 @@ let expr62 = parse1("(list-set (list 0 1 2 3 4 5 6 7) 2 22)")
 let expr63 = parse1("(number? 42)")
 let expr64 = parse1("(number? #t)")
 
+let expr65 = parse1("(/ 12 4)")
+let expr66 = parse1("(quotient 13 4)")
+let expr67 = parse1("(remainder 13 4)")
+let expr68 = parse1("(modulo 13 4)")
 
-js_display(format(core_eval(expr63)))
-js_display(format(core_eval(expr64)))
-//js_display(format(core_eval(expr61)))
-//js_display(format(core_eval(expr53)))
+js_display(format(core_eval(expr65)))
+js_display(format(core_eval(expr66)))
+js_display(format(core_eval(expr67)))
+js_display(format(core_eval(expr68)))
 //js_display(format(core_eval(expr54)))
 //js_display(format(core_eval(expr55)))
 

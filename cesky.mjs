@@ -53,11 +53,25 @@ function string_length(o)   { return             string_string(o).length }
 function o_string_length(o) { return make_number(string_string(o).length) }
 
 function o_string_ref(o,i)  {
-    let idx = check_string_ref("string-ref",o,i);
+    let idx = check_string_index("string-ref",o,i);
     return make_string(string_string(o)[idx])
 }
 
-function check_string_ref(who,o,i) {
+function o_substring(o,start,end) {
+    let who = "substring"
+    check_string(who,o)
+    let i = check_string_index(who,o,start)
+    if (end === undefined)
+        return make_string(string_string(o).substring(i))    
+    else {
+        let j = check_string_index(who,o,end)
+        if (j<i)
+            fail( who + ": ending index is smaller than start index, got: " + i + " and " + j)
+        return make_string(string_string(o).substring(i,j))
+    }    
+}
+
+function check_string_index(who,o,i) {
     check_string(who,o)
     check_integer(who,i)
     let n = o[1].length
@@ -1604,6 +1618,7 @@ initial_env = extend_env(initial_env, sym("bitwise-not"), primitive1("bitwise-no
 initial_env = extend_env(initial_env, sym("string?"),        primitive1("string?",       o_is_string))
 initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
 initial_env = extend_env(initial_env, sym("string-ref"),     primitive2("string-ref",    o_string_ref))
+initial_env = extend_env(initial_env, sym("substring"),      primitive23("substring",    o_substring))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
 
@@ -1700,8 +1715,11 @@ let expr86 = parse1("(string->uninterned-symbol \"foo\")")
 let expr87 = parse1("(string-ref \"foo\" 0)")
 let expr88 = parse1("(string-ref \"foo\" 1)")
 
-js_display(format(core_eval(expr87)))
-js_display(format(core_eval(expr88)))
+let expr89 = parse1("(substring \"foobar\" 3 5)")
+let expr90 = parse1("(substring \"foobar\" 3)")
+
+js_display(format(core_eval(expr89)))
+js_display(format(core_eval(expr90)))
 //js_display(format(core_eval(expr85)))
 //js_display(format(core_eval(expr86)))
 //js_display(format(core_eval(expr73)))

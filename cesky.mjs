@@ -118,8 +118,8 @@ function check_string_index(who,o,i) {
 }
 function check_integer(who, o) {
     let t = tag(o)
-    if (! (t === number_tag))
-        fail(who + ": expected integer, got " + format(i))
+    if (! (t === number_tag))        
+        fail(who + ": expected integer, got " + format(o))
     let n = number_value(o)
     if (!Number.isInteger(n))
         fail(who + ": expected integer, got ", n)
@@ -530,6 +530,14 @@ function dispatch3(proc, args) {
 }
 function dispatch12(proc, args) {    
     return proc(o_car(args), (o_cdr(args) === o_null ? undefined : o_car(o_cdr(args))))
+}
+function dispatch123(proc, args) {    
+    if ( o_cdr(args) === o_null )
+        return proc(o_car(args))
+    if ( o_cdr(o_cdr(args)) === o_null )
+        return proc(o_car(args), o_car(o_cdr(args)))
+    if ( o_cdr(o_cdr(o_cdr(args))) === o_null )
+        return proc(o_car(args), o_car(o_cdr(args)), o_car(o_cdr(o_cdr(args))))
 }
 function dispatch23(proc, args) {    
     return proc(o_car(args), o_car(o_cdr(args)),
@@ -1033,6 +1041,34 @@ function read_from_string(s) {
     }
     return tokens
 }
+
+function o_string_read(str, start, where) {
+    let who = "string-read"
+    if (start === undefined)
+        start = make_number(0)
+    if (where === undefined)
+        where = false
+    else
+        check_string("string-read", where)    
+    check_string(who, str)
+    check_integer(who, start)
+    let idx = check_string_index(who, str, start);
+    
+    let sp = make_string_input_port(string_string(str))
+    set_string_input_port_pos(sp,idx)
+    
+    let tokens = []
+    let i = 0
+    let t = lex(sp)
+    while (!(t === EOF)) {
+        tokens[i++] = t
+        t = lex(sp)
+    }
+    
+    return parse_tokens(tokens)
+}
+    
+
 
 // WRITING
 
@@ -1651,8 +1687,9 @@ function primitive0(name, proc)       { return register_primitive(name, proc, di
 function primitive1(name, proc)       { return register_primitive(name, proc, dispatch1,   1<<1)}
 function primitive2(name, proc)       { return register_primitive(name, proc, dispatch2,   1<<2)}
 function primitive3(name, proc)       { return register_primitive(name, proc, dispatch3,   1<<3)}
-function primitive12(name, proc)      { return register_primitive(name, proc, dispatch12, (1<<1) | (1<<2))}
-function primitive23(name, proc)      { return register_primitive(name, proc, dispatch23, (1<<2) | (1<<3))}
+function primitive12(name, proc)      { return register_primitive(name, proc, dispatch12, (1<<1)|(1<<2))}
+function primitive123(name, proc)     { return register_primitive(name, proc, dispatch123,(1<<1)|(1<<2)|(1<<3))}
+function primitive23(name, proc)      { return register_primitive(name, proc, dispatch23, (1<<2)|(1<<3))}
 function primitiven(name, proc, mask) { return register_primitive(name, proc, dispatchn,   mask)}
 // mask  1+2 = 1 or 2 arguments
 // mask  1   exactly 1 argument
@@ -1729,6 +1766,8 @@ initial_env = extend_env(initial_env, sym("procedure?"),  primitive1("procedure?
 initial_env = extend_env(initial_env, sym("apply"),       o_apply)
 initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
 initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
+
+initial_env = extend_env(initial_env, sym("string-read"),primitive123("string-read", o_string_read))
 
 
 // Singletons
@@ -1844,11 +1883,10 @@ let expr115 = parse1("(module-path? (string->symbol \"foo//bar\"))")
 let expr116 = parse1("(module-path? \"foo/bar\")")
 let expr117 = parse1("(module-path? \"\")")
 
-js_display(format(core_eval(expr113)))
-js_display(format(core_eval(expr114)))
-js_display(format(core_eval(expr115)))
-js_display(format(core_eval(expr116)))
-js_display(format(core_eval(expr117)))
+let expr118 = parse1("(string-read \"1 x foo (11 22) #t \")")
+let expr119 = parse1("(string-read \"1\")")
+
+js_display(format(core_eval(expr118)))
 
 
 //js_display(format(core_eval(expr74)))

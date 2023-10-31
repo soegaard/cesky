@@ -262,6 +262,23 @@ function o_ge(o1,o2) {
     return (number_value(o1) >= number_value(o2) ? o_true : o_false)
 }
 
+function o_bitwise_and(o1,o2) {
+    check_numbers("bitwise-and", o1, o2)
+    return make_number(number_value(o1) & number_value(o2))
+}
+function o_bitwise_ior(o1,o2) {
+    check_numbers("bitwise-ior", o1, o2)
+    return make_number(number_value(o1) | number_value(o2))
+}
+function o_bitwise_xor(o1,o2) {
+    check_numbers("bitwise-xor", o1, o2)
+    return make_number(number_value(o1) ^ number_value(o2))
+}
+function o_bitwise_not(o) {
+    check_number("bitwise-not", o)
+    return make_number( ~ number_value(o) )
+}
+
 
 
 // HASH
@@ -392,6 +409,12 @@ function dispatchn(proc, args) {
 
 
 // ERRORS
+
+function check_number(name, o) {
+    if (!is_number(o))
+        fail_expected1(name, "number", o)
+}
+
 
 function check_numbers(name, o1, o2) {
     if (!is_number(o1))
@@ -1512,19 +1535,23 @@ initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_
 initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
 initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
 
-initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",    o_is_number))
-initial_env = extend_env(initial_env, sym("+"),           primitive2("+",          o_plus))
-initial_env = extend_env(initial_env, sym("-"),           primitive2("-",          o_minus))
-initial_env = extend_env(initial_env, sym("*"),           primitive2("*",          o_mult))
-initial_env = extend_env(initial_env, sym("/"),           primitive2("/",          o_div))
-initial_env = extend_env(initial_env, sym("quotient"),    primitive2("quotient",   o_quotient))
-initial_env = extend_env(initial_env, sym("remainder"),   primitive2("remainder",  o_remainder))
-initial_env = extend_env(initial_env, sym("modulo"),      primitive2("modulo",     o_modulo))
-initial_env = extend_env(initial_env, sym("="),           primitive2("=",          o_eql))
-initial_env = extend_env(initial_env, sym("<"),           primitive2("<",          o_lt))
-initial_env = extend_env(initial_env, sym("<="),          primitive2("<=",         o_le))
-initial_env = extend_env(initial_env, sym(">"),           primitive2(">",          o_gt))
-initial_env = extend_env(initial_env, sym(">="),          primitive2(">=",         o_ge))
+initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",     o_is_number))
+initial_env = extend_env(initial_env, sym("+"),           primitive2("+",           o_plus))
+initial_env = extend_env(initial_env, sym("-"),           primitive2("-",           o_minus))
+initial_env = extend_env(initial_env, sym("*"),           primitive2("*",           o_mult))
+initial_env = extend_env(initial_env, sym("/"),           primitive2("/",           o_div))
+initial_env = extend_env(initial_env, sym("quotient"),    primitive2("quotient",    o_quotient))
+initial_env = extend_env(initial_env, sym("remainder"),   primitive2("remainder",   o_remainder))
+initial_env = extend_env(initial_env, sym("modulo"),      primitive2("modulo",      o_modulo))
+initial_env = extend_env(initial_env, sym("="),           primitive2("=",           o_eql))
+initial_env = extend_env(initial_env, sym("<"),           primitive2("<",           o_lt))
+initial_env = extend_env(initial_env, sym("<="),          primitive2("<=",          o_le))
+initial_env = extend_env(initial_env, sym(">"),           primitive2(">",           o_gt))
+initial_env = extend_env(initial_env, sym(">="),          primitive2(">=",          o_ge))
+initial_env = extend_env(initial_env, sym("bitwise-and"), primitive2("bitwise-and", o_bitwise_and))
+initial_env = extend_env(initial_env, sym("bitwise-ior"), primitive2("bitwise-ior", o_bitwise_ior))
+initial_env = extend_env(initial_env, sym("bitwise-xor"), primitive2("bitwise-xor", o_bitwise_xor))
+initial_env = extend_env(initial_env, sym("bitwise-not"), primitive1("bitwise-not", o_bitwise_not))
 
 
 initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
@@ -1605,16 +1632,21 @@ let expr76 = parse1("(> 1 2)")
 let expr77 = parse1("(>= 2 1)")
 let expr78 = parse1("(>= 1 2)")
 
+let expr79 = parse1("(bitwise-and 1 3)")
+let expr80 = parse1("(bitwise-ior 1 3)")
+let expr81 = parse1("(bitwise-xor 1 3)")
+let expr82 = parse1("(bitwise-not 1)")
 
-js_display(format(core_eval(expr69)))
-js_display(format(core_eval(expr70)))
-js_display(format(core_eval(expr71)))
-js_display(format(core_eval(expr72)))
-js_display(format(core_eval(expr73)))
-js_display(format(core_eval(expr74)))
-js_display(format(core_eval(expr75)))
-js_display(format(core_eval(expr76)))
-js_display(format(core_eval(expr77)))
-js_display(format(core_eval(expr78)))
+
+js_display(format(core_eval(expr79)))
+js_display(format(core_eval(expr80)))
+js_display(format(core_eval(expr81)))
+js_display(format(core_eval(expr82)))
+//js_display(format(core_eval(expr73)))
+//js_display(format(core_eval(expr74)))
+//js_display(format(core_eval(expr75)))
+//js_display(format(core_eval(expr76)))
+//js_display(format(core_eval(expr77)))
+//js_display(format(core_eval(expr78)))
 
 

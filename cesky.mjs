@@ -436,6 +436,20 @@ const o_apply       = [singleton_tag]
 const o_callcc      = [singleton_tag]
 const o_call_prompt = [singleton_tag]
 
+// PROCEDURES
+
+function o_is_procedure(o) {
+    let t = tag(o)
+    return ((   (t === primitive_tag)
+            || (t === closure_tag)
+            || (t === continuation_tag)
+            || (o === o_apply)
+            || (o === o_callcc)
+            || (o === o_call_prompt)
+            || (o === o_kernel_eval))
+            ? o_true : o_false)
+}
+
 // CLOSURES
 function is_closure(o) { return Array.isArray(o) && (tag(o) === closure_tag) }
 
@@ -1686,12 +1700,10 @@ initial_env = extend_env(initial_env, sym("not"),         primitive1("not",     
 initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void_f, -1))
 
 
-// procedure?
+initial_env = extend_env(initial_env, sym("procedure?"),  primitive1("procedure?", o_is_procedure))
 initial_env = extend_env(initial_env, sym("apply"),       o_apply)
 initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
 initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
-
-
 
 
 // Singletons
@@ -1797,6 +1809,9 @@ let expr106 = parse1("(not #f)")
 let expr107 = parse1("(not 1)")
 
 let expr108 = parse1("(void 1 2 3)")
+let expr109 = parse1("(procedure? apply)")
+let expr110 = parse1("(procedure? (lambda () 3))")
+let expr111 = parse1("(procedure? +)")
 
 js_display(format(core_eval(expr102)))
 js_display(format(core_eval(expr103)))
@@ -1805,6 +1820,9 @@ js_display(format(core_eval(expr105)))
 js_display(format(core_eval(expr106)))
 js_display(format(core_eval(expr107)))
 js_display(format(core_eval(expr108)))
+js_display(format(core_eval(expr109)))
+js_display(format(core_eval(expr110)))
+js_display(format(core_eval(expr111)))
 
 
 //js_display(format(core_eval(expr74)))

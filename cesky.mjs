@@ -175,8 +175,8 @@ const unquote_splicing_symbol = sym("unquote-splicing")
 
 // VOID
 const o_void = [void_tag]
-function is_void(o) { return o === o_void }
-
+function is_void(o)   { return o === o_void }
+function o_void_f(o)  { return o_void }
 function o_is_eq(o1,o2) {
     return (o1 === o2) ? o_true : o_false
 }
@@ -1683,7 +1683,7 @@ initial_env = extend_env(initial_env, sym("hash-set!"),   primitive3("hash-set!"
 
 initial_env = extend_env(initial_env, sym("eq?"),         primitive2("eq?",        o_is_eq))
 initial_env = extend_env(initial_env, sym("not"),         primitive1("not",        o_not))
-// initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void))
+initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void_f, -1))
 
 
 // procedure?
@@ -1796,12 +1796,15 @@ let expr105 = parse1("(not #t)")
 let expr106 = parse1("(not #f)")
 let expr107 = parse1("(not 1)")
 
+let expr108 = parse1("(void 1 2 3)")
+
 js_display(format(core_eval(expr102)))
 js_display(format(core_eval(expr103)))
 js_display(format(core_eval(expr104)))
 js_display(format(core_eval(expr105)))
 js_display(format(core_eval(expr106)))
 js_display(format(core_eval(expr107)))
+js_display(format(core_eval(expr108)))
 
 
 //js_display(format(core_eval(expr74)))

@@ -43,16 +43,29 @@ function is_boolean(o) { return Array.isArray(o) && (tag(o) === boolean_tag) }
 function make_boolean(b) { return ( b === false ? o_false  : o_true ) }
 
 // STRINGS
-function is_string(o)      { return Array.isArray(o) && (tag(o) === string_tag) }
-function make_string(str)  { return [string_tag, str] }
-function string_string(o)  { return o[1] }
+function make_string(str)   { return [string_tag, str] }
+function string_string(o)   { return o[1] }
+function is_string(o)       { return              Array.isArray(o) && (tag(o) === string_tag)  }
+function o_is_string(o)     { return make_boolean(Array.isArray(o) && (tag(o) === string_tag)) }
+function string_length(o)   { return string_string(o).length }
+function o_string_length(o) { return make_number(string_string(o).length) }
 
+
+function o_string_to_symbol(o) {
+    check_string("string->symbol", o)
+    return sym(o[1])
+}
+function o_string_to_uninterned_symbol(o) {
+    check_string("string->uninterned-symbol", o)
+    return make_uninterned_symbol(o[1])
+}
 
 // SYMBOLS
 
 const symbol_table = {}  // all interned symbols
 
-function is_symbol(o) { return Array.isArray(o) && (tag(o) === symbol_tag) }
+function   is_symbol(o) { return              Array.isArray(o) && (tag(o) === symbol_tag)  }
+function o_is_symbol(o) { return make_boolean(Array.isArray(o) && (tag(o) === symbol_tag)) }
 
 function sym(str) {
     let interned = symbol_table[str]
@@ -410,11 +423,12 @@ function dispatchn(proc, args) {
 
 // ERRORS
 
+function check_string(name, o) { if (!is_string(o)) fail_expected1(name, "string", o) }
+
 function check_number(name, o) {
     if (!is_number(o))
         fail_expected1(name, "number", o)
 }
-
 
 function check_numbers(name, o1, o2) {
     if (!is_number(o1))
@@ -1536,6 +1550,7 @@ initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_
 initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
 
 initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",     o_is_number))
+initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
 initial_env = extend_env(initial_env, sym("+"),           primitive2("+",           o_plus))
 initial_env = extend_env(initial_env, sym("-"),           primitive2("-",           o_minus))
 initial_env = extend_env(initial_env, sym("*"),           primitive2("*",           o_mult))
@@ -1553,8 +1568,15 @@ initial_env = extend_env(initial_env, sym("bitwise-ior"), primitive2("bitwise-io
 initial_env = extend_env(initial_env, sym("bitwise-xor"), primitive2("bitwise-xor", o_bitwise_xor))
 initial_env = extend_env(initial_env, sym("bitwise-not"), primitive1("bitwise-not", o_bitwise_not))
 
+initial_env = extend_env(initial_env, sym("string?"),        primitive1("string?",       o_is_string))
 
-initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
+initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
+initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
+initial_env = extend_env(initial_env, sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
+initial_env = extend_env(initial_env, sym("string->uninterned-symbol"),
+                               primitive1("string->uninterned-symbol", o_string_to_uninterned_symbol))
+
+
 
 initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
 initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
@@ -1637,11 +1659,16 @@ let expr80 = parse1("(bitwise-ior 1 3)")
 let expr81 = parse1("(bitwise-xor 1 3)")
 let expr82 = parse1("(bitwise-not 1)")
 
+let expr83 = parse1("(string? \"foo\")")
+let expr84 = parse1("(string-length \"foo\")")
+let expr85 = parse1("(string->symbol \"foo\")")
+let expr86 = parse1("(string->uninterned-symbol \"foo\")")
 
-js_display(format(core_eval(expr79)))
-js_display(format(core_eval(expr80)))
-js_display(format(core_eval(expr81)))
-js_display(format(core_eval(expr82)))
+
+js_display(format(core_eval(expr83)))
+js_display(format(core_eval(expr84)))
+js_display(format(core_eval(expr85)))
+js_display(format(core_eval(expr86)))
 //js_display(format(core_eval(expr73)))
 //js_display(format(core_eval(expr74)))
 //js_display(format(core_eval(expr75)))

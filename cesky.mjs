@@ -375,7 +375,8 @@ function o_bitwise_not(o) {
 
 
 
-// HASH
+// HASH TABLES
+
 //   Mutable hash tables with symbols as keys.
 function make_empty_hash() { return [hash_tag, {}] }
 function is_hash(o)        { return Array.isArray(o) && (tag(o) === hash_tag) }
@@ -429,6 +430,28 @@ function o_hash(args) {
     }
     return ht
 }
+
+// MODULES
+
+function o_is_module_path(o) {
+    if (is_symbol(o)) {
+        let s = symbol_string(o)
+        let n = s.length
+        if ( (n === 0) || (s[0]==="/") || (s[n-1]==="/") )
+            return o_false
+        if (s.includes("//"))
+            return o_false
+        return (/^[a-zA-Z0-9/+-]*$/.test(s)) ? o_true : o_false
+    } else if (is_string(o)) {
+        let s = string_string(o)
+        let n = s.length
+        if (n === 0)
+            return o_false
+        return o_true
+    } else
+        fail("module-path?: expected a symbol or a string path")
+}
+
 
 // SINGLETONS
 
@@ -1699,6 +1722,8 @@ initial_env = extend_env(initial_env, sym("eq?"),         primitive2("eq?",     
 initial_env = extend_env(initial_env, sym("not"),         primitive1("not",        o_not))
 initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void_f, -1))
 
+initial_env = extend_env(initial_env, sym("module-path?"),primitive1("module-path?", o_is_module_path))
+
 
 initial_env = extend_env(initial_env, sym("procedure?"),  primitive1("procedure?", o_is_procedure))
 initial_env = extend_env(initial_env, sym("apply"),       o_apply)
@@ -1813,16 +1838,17 @@ let expr109 = parse1("(procedure? apply)")
 let expr110 = parse1("(procedure? (lambda () 3))")
 let expr111 = parse1("(procedure? +)")
 
-js_display(format(core_eval(expr102)))
-js_display(format(core_eval(expr103)))
-js_display(format(core_eval(expr104)))
-js_display(format(core_eval(expr105)))
-js_display(format(core_eval(expr106)))
-js_display(format(core_eval(expr107)))
-js_display(format(core_eval(expr108)))
-js_display(format(core_eval(expr109)))
-js_display(format(core_eval(expr110)))
-js_display(format(core_eval(expr111)))
+let expr113 = parse1("(module-path? (string->symbol \"foo\"))")
+let expr114 = parse1("(module-path? (string->symbol \"foo/bar\"))")
+let expr115 = parse1("(module-path? (string->symbol \"foo//bar\"))")
+let expr116 = parse1("(module-path? \"foo/bar\")")
+let expr117 = parse1("(module-path? \"\")")
+
+js_display(format(core_eval(expr113)))
+js_display(format(core_eval(expr114)))
+js_display(format(core_eval(expr115)))
+js_display(format(core_eval(expr116)))
+js_display(format(core_eval(expr117)))
 
 
 //js_display(format(core_eval(expr74)))

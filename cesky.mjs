@@ -45,10 +45,36 @@ function make_boolean(b) { return ( b === false ? o_false  : o_true ) }
 // STRINGS
 function make_string(str)   { return [string_tag, str] }
 function string_string(o)   { return o[1] }
+
 function is_string(o)       { return              Array.isArray(o) && (tag(o) === string_tag)  }
 function o_is_string(o)     { return make_boolean(Array.isArray(o) && (tag(o) === string_tag)) }
-function string_length(o)   { return string_string(o).length }
+
+function string_length(o)   { return             string_string(o).length }
 function o_string_length(o) { return make_number(string_string(o).length) }
+
+function o_string_ref(o,i)  {
+    let idx = check_string_ref("string-ref",o,i);
+    return make_string(string_string(o)[idx])
+}
+
+function check_string_ref(who,o,i) {
+    check_string(who,o)
+    check_integer(who,i)
+    let n = o[1].length
+    let idx = number_value(i)
+    if(!( (0 <= idx) && ( idx < n)))
+        fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
+    return idx
+}
+
+function check_integer(who, o) {
+    let t = tag(o)
+    if (! (t === number_tag))
+        fail(who + ": expected integer, got " + format(i))
+    let n = number_value(o)
+    if (!Number.isInteger(n))
+        fail(who + ": expected integer, got ", n)
+}
 
 
 function o_string_to_symbol(o) {
@@ -422,6 +448,10 @@ function dispatchn(proc, args) {
 
 
 // ERRORS
+
+function fail(msg) {
+    throw new Error(msg)
+}
 
 function check_string(name, o) { if (!is_string(o)) fail_expected1(name, "string", o) }
 
@@ -1536,6 +1566,9 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 
 let initial_env = make_empty_env()
 
+// Same order as
+//   https://docs.racket-lang.org/zuo/zuo-kernel.html#%28part._kernel-primitives%29
+
 initial_env = extend_env(initial_env, sym("pair?"),     primitive1("pair?",   o_is_pair))
 initial_env = extend_env(initial_env, sym("null?"),     primitive1("null?",   o_is_null))
 initial_env = extend_env(initial_env, sym("list?"),     primitive1("list?",   o_is_list))
@@ -1569,14 +1602,14 @@ initial_env = extend_env(initial_env, sym("bitwise-xor"), primitive2("bitwise-xo
 initial_env = extend_env(initial_env, sym("bitwise-not"), primitive1("bitwise-not", o_bitwise_not))
 
 initial_env = extend_env(initial_env, sym("string?"),        primitive1("string?",       o_is_string))
+initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
+initial_env = extend_env(initial_env, sym("string-ref"),     primitive2("string-ref",    o_string_ref))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
-initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
+
 initial_env = extend_env(initial_env, sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
 initial_env = extend_env(initial_env, sym("string->uninterned-symbol"),
                                primitive1("string->uninterned-symbol", o_string_to_uninterned_symbol))
-
-
 
 initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
 initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
@@ -1664,11 +1697,13 @@ let expr84 = parse1("(string-length \"foo\")")
 let expr85 = parse1("(string->symbol \"foo\")")
 let expr86 = parse1("(string->uninterned-symbol \"foo\")")
 
+let expr87 = parse1("(string-ref \"foo\" 0)")
+let expr88 = parse1("(string-ref \"foo\" 1)")
 
-js_display(format(core_eval(expr83)))
-js_display(format(core_eval(expr84)))
-js_display(format(core_eval(expr85)))
-js_display(format(core_eval(expr86)))
+js_display(format(core_eval(expr87)))
+js_display(format(core_eval(expr88)))
+//js_display(format(core_eval(expr85)))
+//js_display(format(core_eval(expr86)))
 //js_display(format(core_eval(expr73)))
 //js_display(format(core_eval(expr74)))
 //js_display(format(core_eval(expr75)))

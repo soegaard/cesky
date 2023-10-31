@@ -77,6 +77,25 @@ function o_substring(o,start,end) {
         return make_string(string_string(o).substring(i,j))
     }    
 }
+function o_string_equal(o1,o2) {
+    let who = "string=?"
+    check_string(who,o1)
+    check_string(who,o2)
+    return make_boolean(string_string(o1) == string_string(o2))
+}
+function o_string_ci_equal(o1,o2) {
+    let who = "string-ci=?"
+    check_string(who,o1)
+    check_string(who,o2)
+    return make_boolean(string_string(o1).toLowerCase() == string_string(o2).toLowerCase())
+}
+function o_string_lt(o1,o2) {
+    let who = "string<?"
+    check_string(who,o1)
+    check_string(who,o2)
+    return make_boolean(string_string(o1) < string_string(o2))
+}
+    
 
 function check_string_index(who,o,i) {
     check_string(who,o)
@@ -1627,6 +1646,9 @@ initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-
 initial_env = extend_env(initial_env, sym("string-ref"),     primitive2("string-ref",    o_string_ref))
 initial_env = extend_env(initial_env, sym("substring"),      primitive23("substring",    o_substring))
 initial_env = extend_env(initial_env, sym("string"),         primitiven("string",        o_string, -1))
+initial_env = extend_env(initial_env, sym("string=?"),       primitive2("string=?",      o_string_equal))
+initial_env = extend_env(initial_env, sym("string-ci=?"),    primitive2("string-ci=?",   o_string_ci_equal))
+initial_env = extend_env(initial_env, sym("string<?"),       primitive2("string<?",      o_string_lt))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
 
@@ -1728,13 +1750,20 @@ let expr90 = parse1("(substring \"foobar\" 3)")
 
 let expr91 = parse1("(string (string-ref \"foobar\" 0) (string-ref \"foobar\" 1) (string-ref \"foobar\" 2))")
 
-js_display(format(core_eval(expr87)))
-js_display(format(core_eval(expr88)))
-js_display(format(core_eval(expr91)))
+let expr92 = parse1("(string=? \"foo\" \"foo\")")
+let expr93 = parse1("(string=? \"foo\" \"fo\")")
+let expr94 = parse1("(string-ci=? \"foo\" \"FoO\")")
+let expr95 = parse1("(string-ci=? \"foo\" \"fo\")")
+let expr96 = parse1("(string<? \"aaa\" \"aab\")")
+let expr97 = parse1("(string<? \"aab\" \"aaa\")")
 
-//js_display(format(core_eval(expr85)))
-//js_display(format(core_eval(expr86)))
-//js_display(format(core_eval(expr73)))
+js_display(format(core_eval(expr92)))
+js_display(format(core_eval(expr93)))
+js_display(format(core_eval(expr94)))
+js_display(format(core_eval(expr95)))
+js_display(format(core_eval(expr96)))
+js_display(format(core_eval(expr97)))
+
 //js_display(format(core_eval(expr74)))
 //js_display(format(core_eval(expr75)))
 //js_display(format(core_eval(expr76)))

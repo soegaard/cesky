@@ -241,6 +241,29 @@ function o_quotient(o1, o2)  { return make_number(Math.floor(o1[1] / o2[1])) }
 
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
 
+function o_eql(o1,o2) {
+    check_numbers("=", o1, o2)
+    return (number_value(o1) === number_value(o2) ? o_true : o_false)
+}
+function o_lt(o1,o2) {
+    check_numbers("<", o1, o2)
+    return (number_value(o1) < number_value(o2) ? o_true : o_false)
+}
+function o_le(o1,o2) {
+    check_numbers("<=", o1, o2)
+    return (number_value(o1) <= number_value(o2) ? o_true : o_false)
+}
+function o_gt(o1,o2) {
+    check_numbers(">", o1, o2)
+    return (number_value(o1) > number_value(o2) ? o_true : o_false)
+}
+function o_ge(o1,o2) {
+    check_numbers(">=", o1, o2)
+    return (number_value(o1) >= number_value(o2) ? o_true : o_false)
+}
+
+
+
 // HASH
 //   Mutable hash tables with symbols as keys.
 function make_empty_hash() { return [hash_tag, {}] }
@@ -370,6 +393,12 @@ function dispatchn(proc, args) {
 
 // ERRORS
 
+function check_numbers(name, o1, o2) {
+    if (!is_number(o1))
+        fail_expected1(name, "number", o1)
+    if (!is_number(o2))
+        fail_expected1(name, "number", o2)
+}
 
 function fail_expected1(name, type, value) {
     console.log(name + ":")
@@ -1491,6 +1520,11 @@ initial_env = extend_env(initial_env, sym("/"),           primitive2("/",       
 initial_env = extend_env(initial_env, sym("quotient"),    primitive2("quotient",   o_quotient))
 initial_env = extend_env(initial_env, sym("remainder"),   primitive2("remainder",  o_remainder))
 initial_env = extend_env(initial_env, sym("modulo"),      primitive2("modulo",     o_modulo))
+initial_env = extend_env(initial_env, sym("="),           primitive2("=",          o_eql))
+initial_env = extend_env(initial_env, sym("<"),           primitive2("<",          o_lt))
+initial_env = extend_env(initial_env, sym("<="),          primitive2("<=",         o_le))
+initial_env = extend_env(initial_env, sym(">"),           primitive2(">",          o_gt))
+initial_env = extend_env(initial_env, sym(">="),          primitive2(">=",         o_ge))
 
 
 initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
@@ -1560,11 +1594,27 @@ let expr66 = parse1("(quotient 13 4)")
 let expr67 = parse1("(remainder 13 4)")
 let expr68 = parse1("(modulo 13 4)")
 
-js_display(format(core_eval(expr65)))
-js_display(format(core_eval(expr66)))
-js_display(format(core_eval(expr67)))
-js_display(format(core_eval(expr68)))
-//js_display(format(core_eval(expr54)))
-//js_display(format(core_eval(expr55)))
+let expr69 = parse1("(= 1 1)")
+let expr70 = parse1("(= 1 2)")
+let expr71 = parse1("(< 1 2)")
+let expr72 = parse1("(< 2 1)")
+let expr73 = parse1("(<= 1 2)")
+let expr74 = parse1("(<= 2 1)")
+let expr75 = parse1("(> 2 1)")
+let expr76 = parse1("(> 1 2)")
+let expr77 = parse1("(>= 2 1)")
+let expr78 = parse1("(>= 1 2)")
+
+
+js_display(format(core_eval(expr69)))
+js_display(format(core_eval(expr70)))
+js_display(format(core_eval(expr71)))
+js_display(format(core_eval(expr72)))
+js_display(format(core_eval(expr73)))
+js_display(format(core_eval(expr74)))
+js_display(format(core_eval(expr75)))
+js_display(format(core_eval(expr76)))
+js_display(format(core_eval(expr77)))
+js_display(format(core_eval(expr78)))
 
 

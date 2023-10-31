@@ -116,7 +116,6 @@ function check_string_index(who,o,i) {
         fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
     return idx
 }
-
 function check_integer(who, o) {
     let t = tag(o)
     if (! (t === number_tag))
@@ -125,7 +124,6 @@ function check_integer(who, o) {
     if (!Number.isInteger(n))
         fail(who + ": expected integer, got ", n)
 }
-
 
 function o_string_to_symbol(o) {
     check_string("string->symbol", o)
@@ -178,6 +176,13 @@ const unquote_splicing_symbol = sym("unquote-splicing")
 // VOID
 const o_void = [void_tag]
 function is_void(o) { return o === o_void }
+
+function o_is_eq(o1,o2) {
+    return (o1 === o2) ? o_true : o_false
+}
+function o_not(o) {
+    return (o === o_false) ? o_true : o_false
+}
 
 // NULL, PAIRS, LISTS
 
@@ -1666,24 +1671,31 @@ initial_env = extend_env(initial_env, sym("string<?"),       primitive2("string<
 initial_env = extend_env(initial_env, sym("string-split"),   primitive12("string-split", o_string_split))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
-
+initial_env = extend_env(initial_env, sym("symbol->string"), primitive1("symbol->string",o_symbol_to_string))
 initial_env = extend_env(initial_env, sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
 initial_env = extend_env(initial_env, sym("string->uninterned-symbol"),
                                primitive1("string->uninterned-symbol", o_string_to_uninterned_symbol))
 
-initial_env = extend_env(initial_env, sym("list?"),       primitive1("list?",      o_is_list))
 initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
 initial_env = extend_env(initial_env, sym("hash"),        primitiven("hash",       o_hash, -1))
 initial_env = extend_env(initial_env, sym("hash-ref"),    primitive23("hash-ref",  o_hash_ref))
 initial_env = extend_env(initial_env, sym("hash-set!"),   primitive3("hash-set!",  o_hash_set))
 
+initial_env = extend_env(initial_env, sym("eq?"),         primitive2("eq?",        o_is_eq))
+initial_env = extend_env(initial_env, sym("not"),         primitive1("not",        o_not))
+// initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void))
 
-// Singletons
-initial_env = extend_env(initial_env, sym("null"),        o_null)
-// Special procedures
+
+// procedure?
 initial_env = extend_env(initial_env, sym("apply"),       o_apply)
 initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
 initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
+
+
+
+
+// Singletons
+initial_env = extend_env(initial_env, sym("null"),        o_null)
 
 
 // console.log( read_from_string( " ( foo bar 43 baz + +3 -10 -a - 10. 11.1 12.34 .34 .bar ..4 ... #t #f oo ' ` , ,@ )"))
@@ -1775,8 +1787,21 @@ let expr97 = parse1("(string<? \"aab\" \"aaa\")")
 let expr98 = parse1("(string-split \"hello world is popular\")")
 let expr99 = parse1("(string-split \"hello world is popular\" \"l\")")
 
-js_display(format(core_eval(expr98)))
-js_display(format(core_eval(expr99)))
+let expr100 = parse1("(string->symbol \"foo\")")
+let expr101 = parse1("(symbol->string (string->symbol \"foo\"))")
+let expr102 = parse1("(eq? (string->symbol \"foo\") (string->symbol \"foo\"))")
+let expr103 = parse1("(eq? 11 11)")
+let expr104 = parse1("(= 11 11)")
+let expr105 = parse1("(not #t)")
+let expr106 = parse1("(not #f)")
+let expr107 = parse1("(not 1)")
+
+js_display(format(core_eval(expr102)))
+js_display(format(core_eval(expr103)))
+js_display(format(core_eval(expr104)))
+js_display(format(core_eval(expr105)))
+js_display(format(core_eval(expr106)))
+js_display(format(core_eval(expr107)))
 
 
 //js_display(format(core_eval(expr74)))
@@ -1784,6 +1809,3 @@ js_display(format(core_eval(expr99)))
 //js_display(format(core_eval(expr76)))
 //js_display(format(core_eval(expr77)))
 //js_display(format(core_eval(expr78)))
-
-
-js_write( array_to_list( [1,2,3] ))

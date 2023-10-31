@@ -95,6 +95,16 @@ function o_string_lt(o1,o2) {
     check_string(who,o2)
     return make_boolean(string_string(o1) < string_string(o2))
 }
+function o_string_split(o1,o2) {
+    let who = "string-split"
+    check_string(who,o1)
+    if (o2 === undefined)
+        return array_to_list(string_string(o1).split(" ").map(make_string))
+    else {
+        check_string(who,o2)
+        return array_to_list(string_string(o1).split(string_string(o2)).map(make_string))
+    }
+}
     
 
 function check_string_index(who,o,i) {
@@ -254,7 +264,7 @@ function o_list_set(xs, index, value) {
 function array_to_list(axs) {
     let n = axs.length
     let xs = o_null
-    for (let i = 0; i<n; i++) {
+    for (let i = n-1; i>=0; i--) {
 	xs = o_cons(axs[i],xs)
     }
     return xs
@@ -475,6 +485,9 @@ function dispatch2(proc, args) {
 }
 function dispatch3(proc, args) {
     return proc(o_car(args), o_car(o_cdr(args)), o_car(o_cdr(o_cdr(args))))
+}
+function dispatch12(proc, args) {    
+    return proc(o_car(args), (o_cdr(args) === o_null ? undefined : o_car(o_cdr(args))))
 }
 function dispatch23(proc, args) {    
     return proc(o_car(args), o_car(o_cdr(args)),
@@ -1596,6 +1609,7 @@ function primitive0(name, proc)       { return register_primitive(name, proc, di
 function primitive1(name, proc)       { return register_primitive(name, proc, dispatch1,   1<<1)}
 function primitive2(name, proc)       { return register_primitive(name, proc, dispatch2,   1<<2)}
 function primitive3(name, proc)       { return register_primitive(name, proc, dispatch3,   1<<3)}
+function primitive12(name, proc)      { return register_primitive(name, proc, dispatch12, (1<<1) | (1<<2))}
 function primitive23(name, proc)      { return register_primitive(name, proc, dispatch23, (1<<2) | (1<<3))}
 function primitiven(name, proc, mask) { return register_primitive(name, proc, dispatchn,   mask)}
 // mask  1+2 = 1 or 2 arguments
@@ -1649,6 +1663,7 @@ initial_env = extend_env(initial_env, sym("string"),         primitiven("string"
 initial_env = extend_env(initial_env, sym("string=?"),       primitive2("string=?",      o_string_equal))
 initial_env = extend_env(initial_env, sym("string-ci=?"),    primitive2("string-ci=?",   o_string_ci_equal))
 initial_env = extend_env(initial_env, sym("string<?"),       primitive2("string<?",      o_string_lt))
+initial_env = extend_env(initial_env, sym("string-split"),   primitive12("string-split", o_string_split))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
 
@@ -1757,12 +1772,12 @@ let expr95 = parse1("(string-ci=? \"foo\" \"fo\")")
 let expr96 = parse1("(string<? \"aaa\" \"aab\")")
 let expr97 = parse1("(string<? \"aab\" \"aaa\")")
 
-js_display(format(core_eval(expr92)))
-js_display(format(core_eval(expr93)))
-js_display(format(core_eval(expr94)))
-js_display(format(core_eval(expr95)))
-js_display(format(core_eval(expr96)))
-js_display(format(core_eval(expr97)))
+let expr98 = parse1("(string-split \"hello world is popular\")")
+let expr99 = parse1("(string-split \"hello world is popular\" \"l\")")
+
+js_display(format(core_eval(expr98)))
+js_display(format(core_eval(expr99)))
+
 
 //js_display(format(core_eval(expr74)))
 //js_display(format(core_eval(expr75)))
@@ -1771,3 +1786,4 @@ js_display(format(core_eval(expr97)))
 //js_display(format(core_eval(expr78)))
 
 
+js_write( array_to_list( [1,2,3] ))

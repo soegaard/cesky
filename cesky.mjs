@@ -54,9 +54,16 @@ function o_string_length(o) { return make_number(string_string(o).length) }
 
 function o_string_ref(o,i)  {
     let idx = check_string_index("string-ref",o,i);
-    return make_string(string_string(o)[idx])
+    return make_number(string_string(o).charCodeAt(idx))
 }
-
+function o_string(os) {
+    js_write(os)
+    let cs = list_to_array(os)
+    let ns = cs.map( (x) => number_value(x) )
+    js_write(ns)
+    js_write(String.fromCharCode.apply(null, ns))
+    return make_string(String.fromCharCode.apply(null, ns))
+}
 function o_substring(o,start,end) {
     let who = "substring"
     check_string(who,o)
@@ -237,14 +244,14 @@ function array_to_list(axs) {
 function list_to_array(xs) {
     let n   = js_list_length(xs)
     let axs = new Array(n)
-    let i = n
+    let i = 0
     while (!is_null(xs)) {
-	axs[--i] = o_car(xs)
+	axs[i++] = o_car(xs)
 	xs = o_cdr(xs)
     }
     return axs
 }
-
+    
 function o_append(os) {
     let first = o_null
     let last  = false
@@ -1619,6 +1626,7 @@ initial_env = extend_env(initial_env, sym("string?"),        primitive1("string?
 initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
 initial_env = extend_env(initial_env, sym("string-ref"),     primitive2("string-ref",    o_string_ref))
 initial_env = extend_env(initial_env, sym("substring"),      primitive23("substring",    o_substring))
+initial_env = extend_env(initial_env, sym("string"),         primitiven("string",        o_string, -1))
 
 initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
 
@@ -1718,8 +1726,12 @@ let expr88 = parse1("(string-ref \"foo\" 1)")
 let expr89 = parse1("(substring \"foobar\" 3 5)")
 let expr90 = parse1("(substring \"foobar\" 3)")
 
-js_display(format(core_eval(expr89)))
-js_display(format(core_eval(expr90)))
+let expr91 = parse1("(string (string-ref \"foobar\" 0) (string-ref \"foobar\" 1) (string-ref \"foobar\" 2))")
+
+js_display(format(core_eval(expr87)))
+js_display(format(core_eval(expr88)))
+js_display(format(core_eval(expr91)))
+
 //js_display(format(core_eval(expr85)))
 //js_display(format(core_eval(expr86)))
 //js_display(format(core_eval(expr73)))

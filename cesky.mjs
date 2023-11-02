@@ -1,11 +1,14 @@
-// CESK-interpreter in ES6 JavaScript
+// CEK-interpreter in ES6 JavaScript
 
 // Running
-//   node cesk-interpreter.mjs
+//   node cesky.mjs
 // Linting
-//   npx eslint cesk-interpreter.mjs
+//   npx eslint cesky.mjs
 
 import util from 'node:util'
+import * as fs from 'node:fs'  // for readFileSync
+
+
 function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
@@ -57,11 +60,8 @@ function o_string_ref(o,i)  {
     return make_number(string_string(o).charCodeAt(idx))
 }
 function o_string(os) {
-    js_write(os)
     let cs = list_to_array(os)
     let ns = cs.map( (x) => number_value(x) )
-    js_write(ns)
-    js_write(String.fromCharCode.apply(null, ns))
     return make_string(String.fromCharCode.apply(null, ns))
 }
 function o_substring(o,start,end) {
@@ -151,6 +151,9 @@ function make_symbol(str) {
     symbol_table[str] = val
     return val
 }
+function symbol_string(o) { return o[1] }
+function symbol_key(o)    { return o[2] }
+
 function make_uninterned_symbol(str) {
     let key = Symbol(str)            // used as keys in hash tables
     return [symbol_tag, str, key]
@@ -159,15 +162,12 @@ function make_uninterned_symbol(str) {
 function o_symbol_to_string(o) {
     return make_string(o[1])
 }
-function symbol_string(o) { return o[1] }
-function symbol_key(o)    { return o[2] }
 
 const begin_symbol            = sym("begin")
 const define_symbol           = sym("define")
 const if_symbol               = sym("if")
 const lambda_symbol           = sym("lambda")
 const let_symbol              = sym("let")
-const let1_symbol             = sym("let1")
 const quote_symbol            = sym("quote")
 const quasiquote_symbol       = sym("quasiquote")
 const unquote_symbol          = sym("unquote")
@@ -200,6 +200,14 @@ function set_cdr(o,d)   { o[2] = d }
 function o_set_car(o,a) { o[1] = a ; return o_void }
 function o_set_cdr(o,d) { o[2] = d ; return o_void }
 function o_list(os)     { return os }
+
+function list(...os) {
+    let xs = o_null
+    for (const o of os.reverse()) {
+        xs = o_cons(o, xs)
+    }
+    return xs
+}
 
 function o_length(xs)   { return make_number(js_list_length(xs)) }
 function js_list_length(xs) {
@@ -431,7 +439,15 @@ function o_hash(args) {
     return ht
 }
 
+
+
+
 // MODULES
+
+let o_modules = o_null  // list of (cons module-path module)
+                        // where module-path is a symbol or string and
+                        // module is a hash table
+let o_pending_modules = o_null // list of module-paths  (for cycle detection)
 
 function o_is_module_path(o) {
     if (is_symbol(o)) {
@@ -449,10 +465,142 @@ function o_is_module_path(o) {
             return o_false
         return o_true
     } else
-        fail("module-path?: expected a symbol or a string path")
+        throw new Error("module-path?: expected a symbol or a string path")
+}
+
+// private primitive
+function register_module(modpath, mod) {
+    const who = "register_module"
+    // Register the module `mod` which hasn't been registered before.
+    if (!(tag(mod) === hash_tag))
+        throw new Error(who+": module did not produce a hash table " + format(modpath))
+    
+    if ( (o_pending_modules == o_null) || (modpath != o_car(o_pending_modules)) )
+        throw new Error("attempting to register unexpected module: " + format(modpath))
+
+    o_modules = o_cons(o_cons(modpath, mod), o_modules)
+    o_pending_modules = o_cdr(o_pending_modules)
+
+    return mod
+} 
+
+function o_get_read_and_eval(lang, mod) {
+    let proc = o_hash_ref(mod, sym("read-and-eval"), o_false)
+    if (!(tag(proc) === closure_tag))
+        throw new Error("not a language module path: " + format(lang))
+    return proc
+}
+
+function read_language(sp, who) {
+    // 1. skip whitespace and comments
+    // 2. read "#lang " and `module-path`.
+    // 3. return the module path as symbol or string.
+    // 4. effect: the position of sp is now after the module path.
+    if (who === undefined) who = "read-language"
+    skip_atmosphere(sp)
+    eat_string(sp, "#lang ", who, "expected #lang followed by a space")
+    let mp = maybe_read_module_path(sp)
+    if (o_is_module_path(mp))
+        return mp
+    throw new Error(who + ": expected module library path after #lang")
+}
+
+function module_path_equal(mp1, mp2) {
+    if (tag(mp1) === symbol_tag)
+        return mp1 === mp2
+    if (tag(mp2) === symbol_tag)
+        return false
+    return o_string_equal(mp1,mp2) === o_true
+}
+
+function check_module_path(who, mp) {
+    if (o_is_module_path(mp) == o_false)
+        throw new Error(who + ": module path expected, got " + format(mp))
 }
 
 
+let o_library_path = o_false  // o_false or absolute path
+
+function build_path(base, rel) {
+    let out = base + "/" + rel
+    return out
+}
+
+function file_to_string(path) {
+    let s = fs.readFileSync(path, "utf8")
+    return s
+}
+
+function library_path_to_file_path(path) {
+    js_write(path)
+    if ( !is_symbol(path) )
+        throw new Error("module-path->path: expected a module path")
+    if( o_library_path === o_false)
+        throw new Error("no library path configured, cannot load module: " + format(path))
+
+    let saw_slash = /[/]/.test(symbol_string(path))
+    
+    let rel = o_tilde_a(list(o_symbol_to_string(path),
+                             saw_slash ? make_string("") : make_string("/main"),
+                             make_string(".rac")))
+    return build_path(o_library_path, rel)
+}
+
+
+function module_to_hash_star(mp) {
+    js_display(["module_to_hash_star", mp])
+
+    // Does the work for module->hash in the case,
+    // where the module is already declared.
+    let who = "module->hash"
+    check_module_path(who, mp)
+
+    // loop over the list of declared modules,
+    // which is a list of (cons mp hash)
+    let ms = o_modules
+    while (! (ms === o_null)) {
+        let a = o_car(ms)
+        if ( module_path_equal(o_car(a), mp) )
+            return o_cdr(a)
+        ms = o_cdr(ms)
+    }
+
+    // check for cycles
+    let ps = o_pending_modules
+    while (! (ps === o_null)) {
+        if ( module_path_equal(o_car(ps), mp) )
+            throw new Error("cycle in module loading, while loading: " + format(mp))
+        ms = o_cdr(ms)
+    }
+
+    // mp is not declared, so we must prepare loading it
+    o_pending_modules = o_cons(mp, o_pending_modules)
+
+    let filepath = (is_symbol(mp) ? library_path_to_file_path(mp) : mp )
+
+    // todo: log module start
+    {
+        // 1. read the file to a string
+        // 2. read the language
+        // 3. return language, string port and module path
+
+        let s = file_to_string(filepath)
+        let sp = make_string_input_port(s)
+        let lang = read_language(sp, "module->hash")
+        return list(lang, sp, mp)        
+    }    
+}
+
+function o_module_to_hash(mp) {
+    // This function calls the value of `module->hash` in the
+    // top-level environment. That value happens to be a closure
+    // (see `make_top_env`) that actually does the work.
+    js_display(["o_module_to_hash", mp])    
+    check_symbol("module->hash", mp)
+    return o_kernel_eval( list(o_top_ref(o_top_env, sym("module->hash")),
+                               list(quote_symbol, mp)))
+}
+    
 // SINGLETONS
 
 const o_apply       = [singleton_tag]
@@ -555,55 +703,51 @@ function dispatchn(proc, args) {
 function fail(msg) {
     throw new Error(msg)
 }
-
-function check_string(name, o) { if (!is_string(o)) fail_expected1(name, "string", o) }
+function check_string(name, o) {
+    if (!is_string(o))
+        fail_expected1(name, "string", o)
+}
+function check_symbol(name, o) {
+    if (!is_symbol(o))
+        fail_expected1(name, "symbol", o) }
 
 function check_number(name, o) {
     if (!is_number(o))
         fail_expected1(name, "number", o)
 }
-
 function check_numbers(name, o1, o2) {
     if (!is_number(o1))
         fail_expected1(name, "number", o1)
     if (!is_number(o2))
         fail_expected1(name, "number", o2)
 }
-
 function fail_expected1(name, type, value) {
     console.log(name + ":")
     console.log("  expected: " + type)
-    console.log("  given: " + value)
+    console.log("  given: " + format(value))
     throw new Error("^^^^")    
 }
-
 function check(name, typename, predicate, value) {
     if (!predicate(value)) 
         fail_expected1(name, typename, value)
 }
-
 function panic(msg) {
     throw new Error(msg)
 }
-
 function read_error(msg) {
     throw new Error(msg)
 }
-
 function error_arity(name, args) {
     console.log(name + ": arity mismatch")
     console.log("   " + args)
     throw new Error("^^^^")
 }
-
 function error_arg(name, argument_name, arg) {
     console.log(name + ": ")
     console.log("   expected:" + argument_name)
     console.log("   given:"    + arg)
     throw new Error("^^^^")
 }
-
-
 
 
 // JAVASCRIPT TYPES
@@ -700,6 +844,17 @@ function peek_char(sp) {
         return s[i]
     }       
 }
+function eat_string(sp, expect, who, msg) {
+    let s = string_input_port_string(sp)
+    let i = string_input_port_pos(sp)
+    let n = expect.length
+    let p = s.substring(i,n)
+    if (p == expect)
+        set_string_input_port_pos(sp,i+n)
+    else
+        throw new Error(who + ": " + msg)
+}
+
 
 function back_char(sp) {
     let i = string_input_port_pos(sp)
@@ -746,7 +901,6 @@ function skip_atmosphere(sp) {
         p = peek_char(sp)
     }
 }
-    
 
 // Tokens
 const LPAREN = Symbol.for("(")
@@ -882,6 +1036,18 @@ function lex_string(sp) {
             cs[i++] = c
         }
     }
+}
+
+function maybe_read_module_path(sp) {
+    skip_atmosphere(sp)
+    let p = peek_char(sp)
+    if (p === "\"")
+        return lex_string(sp)
+    if (p === EOF)
+        return false
+    if (/[a-zA-Z0-9/+-]/.test(p))
+        return lex_symbol(sp)
+    return false
 }
 
 function o_reverse(o) {
@@ -1069,7 +1235,6 @@ function o_string_read(str, start, where) {
 }
     
 
-
 // WRITING
 
 // const pair_tag               = ["pair"]
@@ -1077,11 +1242,27 @@ function o_string_read(str, start, where) {
 // const string_input_port_tag  = ["string_input_port"]  // internal for now
 // const string_output_port_tag = ["string_output_port"] // internal for now
 
-function format_symbol  (o) { return symbol_string(o) }
-function format_number  (o) { return number_value(o).toString() }
-function format_boolean (o) { return (o === o_false ? "#f" : "#t") }
-function format_string  (o) { return "\"" + string_string(o) + "\"" }
+const print_mode   = Symbol("print-mode")
+const write_mode   = Symbol("write-mode")
+const display_mode = Symbol("display-mode")
 
+function to_string(os, mode) {
+    let as = list_to_array(os)
+    let fs = as.map( (o) => format(o, mode) )
+    return fs.join(mode === display_mode ? "" : " ")
+}
+
+function o_tilde_v(os) { return to_string(os, print_mode)   } // TODO WIP use mode in o_to_string 
+function o_tilde_s(os) { return to_string(os, write_mode)   } // TODO WIP
+function o_tilde_a(os) { return to_string(os, display_mode) } // TODO WIP
+
+function format_symbol(o, mode)  { return (mode === print_mode ? "'" : "") + symbol_string(o) }
+function format_number(o)        { return number_value(o).toString() }
+function format_boolean(o)       { return (o === o_false ? "#f" : "#t") }
+function format_string(o,mode) {
+    let s = string_string(o) ;
+    return (mode===display_mode)?s:"\""+s+"\""
+}
 
 function is_atom (o) {
     let t = tag(o)
@@ -1100,14 +1281,21 @@ function is_atom (o) {
         || (o === o_call_prompt)
 }
 
-
-function format_atom (o) {
+function format_atom (o, mode) {
+    // atom here means a single value, which can be formatted
+    // without recursion
     let t = tag(o)
-    if      (t == symbol_tag)         { return format_symbol(o)   }
+    if      (t == symbol_tag)         { return format_symbol(o, mode) }
     else if (t == number_tag)         { return format_number(o)   }
     else if (t == boolean_tag)        { return format_boolean(o)  }
-    else if (t == string_tag)         { return format_string(o)   }
-    else if (t == closure_tag)        { return "#<procedure>"     }
+    else if (t == string_tag)         { return format_string(o, mode) }
+    else if (t == closure_tag)        {
+        let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
+        return  "#<procedure" + (is_string(maybe_name) ?
+                                 ":" + string_string(maybe_name) :
+                                 "")
+            + ">"
+    }
     else if (t == primitive_tag)      { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)   { return "#<continuation>" }
     else if (t == hash_tag)           { return "#<hash>" }        
@@ -1121,8 +1309,9 @@ function format_atom (o) {
 }
 
     
-
-function format(o,mode) {
+function format(o, mode) {
+    if (mode === undefined)
+        mode = display_mode
     // Output string
     let sp = make_string_output_port()       
     // Stack of commands
@@ -1139,15 +1328,16 @@ function format(o,mode) {
         // js_write(get_output_string(sp))
         // js_write(o)
         // js_write(stack)
-
         let inst = pop()
         let cmd  = inst[0]
         let data = inst[1]
 
         if (cmd === "datum") {
             if(is_atom(o)) {
-                write_string(sp, format_atom(o))
+                write_string(sp, format_atom(o, mode))
             } else if (is_pair(o)) {
+                if (mode === print_mode)
+                    write_string(sp, "'")
                 write_string(sp, "(")
                 pushdata("tail", o_cdr(o))
                 o = o_car(o)
@@ -1156,15 +1346,15 @@ function format(o,mode) {
         } else if (cmd === "tail") {
             o = data
             if (is_pair(o)) {
-                write_string(sp," ")
+                write_string(sp, " ")
                 pushdata("tail", o_cdr(o))
                 o = o_car(o)
                 push("datum")
             } else if (o === o_null) {
-                write_string(sp,")")
+                write_string(sp, ")")
             } else if (is_atom(o)) {
                 write_string(sp, " . ")                
-                write_string(sp, format_atom(o))
+                write_string(sp, format_atom(o, mode))
                 write_string(sp, ")")
                 o = data
             }
@@ -1201,7 +1391,12 @@ function lookup(env,sym) {
 
 // TOP-LEVEL
 
-let top_level = new WeakMap()
+// Note: Should the top level environment use a hash instead?
+
+// Note: In JavaScript registered symbols can't be used
+//       as keys for a weak map.
+
+let top_level = new Map()
 
 function extend_top_level(sym, o) {
     top_level.set(sym, o)
@@ -1215,13 +1410,29 @@ function reset_top_level () {
     top_level = new WeakMap()
 }
 
+
+function o_top_ref(s) {
+    // check_symbol("top-ref", s) TODO
+    let v = lookup_top_level(symbol_key(s))
+    if (v === undefined)
+        return o_false
+    return v        
+}
+    
+
+// TOP ENVIRONMENT
+function o_kernel_env() {
+    return make_top_env(hash_mode)
+}
+
+
 // Continuations
 
 const done_k   = Symbol("done_k")
 const define_k = Symbol("define_k")
 const if_k     = Symbol("if_k")
 const begin_k  = Symbol("begin_k")
-const let1_k   = Symbol("let1_k")
+const let_k    = Symbol("let_k")
 const apply_k  = Symbol("apply_k")
 
 const o_done_k = [done_k, false, false, false] // sentinel
@@ -1265,7 +1476,8 @@ function step( s ) {
     let v   = undefined
 
     while (v === undefined ) {
-	if  (is_boolean(e) || is_number(e) || is_string(e) || is_null(e) || is_void(e) || is_continuation(e)) {
+	if  (is_boolean(e) || is_number(e) || is_string(e) || is_null(e)
+             || is_void(e) || is_continuation(e)) {
             v = e
 	} else if (is_symbol(e)) {
             v = lookup(env, e)
@@ -1304,13 +1516,13 @@ function step( s ) {
                     let new_k = [begin_k, es, k, env]
                     set_state_k(s, new_k)
                 }
-            } else if (rator === let1_symbol) {
-                // (let1 x e0 e1)
-                let x  = o_car(o_cdr(e))
-                let e0 = o_car(o_cdr(o_cdr(e)))
-                let e1 = o_car(o_cdr(o_cdr(o_cdr(e))))
+            } else if (rator === let_symbol) {
+                // (let ([x e0]) e1)
+                let x  =       o_car(o_car(o_car(o_cdr(e))))
+                let e0 = o_car(o_cdr(o_car(o_car(o_cdr(e)))))
+                let e1 = o_car(o_cdr(o_cdr(e)))
                 e = e0
-                let new_k = [let1_k, [x,e1], state_k(s), env]
+                let new_k = [let_k, [x,e1], state_k(s), env]
                 set_state_k(s, new_k)
             } else {
                 // (e0 e ...)
@@ -1405,9 +1617,10 @@ function continue_step(s) {
                     let mask       = primitive_arity_mask(f)
                     if (!( mask & ( 1 << ((count >= MAX_PRIM_ARITY) ? MAX_PRIM_ARITY : count) ) ))
                         throw new Error(   primitive_name(f) + ": arity mismatch;\n"
-                                         + "  the expected number of arguments doesn't match the given number\n"
-                                        // + "   expected: " arity_mask_to_string(mask)"
-                                         + "     given: " + count)
+                                           + "  the expected number of arguments doesn't "
+                                           + "match the given number\n"
+                                           // + "   expected: " arity_mask_to_string(mask)"
+                                           + "     given: " + count)
                     let v          = dispatcher(proc, args)
                     return [o_cons(quote_symbol, o_cons(v, o_null)),
                             state_env(s), state_mem(s), cont_next(state_k(s)), state_m(s)]
@@ -1417,10 +1630,21 @@ function continue_step(s) {
                     let ce       = closure_e(rator)         // (lambda formals body)
                     let cenv     = closure_env(rator)
                     let formals  = o_car(o_cdr(ce))         // id or (id ...) or (id ... . more)
+                    let body1    = o_cdr(o_cdr(ce))
+                    let body_d   = o_cdr(body1)
                     let body     = o_car(o_cdr(o_cdr(ce)))
-
+                    if (body_d === o_null)
+                        "todo"; // o_interp_in_proc = o_false
+                    else {
+                        let a = o_car(body1)
+                        if (is_string(a))
+                            // `a` is the name of the closure
+                            // skip the string
+                            body = o_car(body_d) // o_interp_in_proc = a
+                        else
+                            "todo"; // o_interp_in_proc = o_false
+                    }
                     while (is_pair(formals)) {
-                        // if (is_null(args)) { break }
                         cenv    = extend_env(cenv, o_car(formals), o_car(args))
                         args    = o_cdr(args)
                         formals = o_cdr(formals)
@@ -1456,7 +1680,7 @@ function continue_step(s) {
 	let next = cont_next(k)
 	let new_k = is_null(o_cdr(d)) ? next : [begin_k, o_cdr(d), next, state_env(s)]
 	return [e,state_env(s),state_mem(s),new_k,state_m(s)]
-    } else if (t === let1_k) {
+    } else if (t === let_k) {
 	let v    = state_v(s)
 	let d    = cont_data(k) 
 	let x    = d[0]
@@ -1478,7 +1702,8 @@ function continue_step(s) {
     }    
 }
 
-function core_eval(expr) {
+function o_kernel_eval(expr) {
+    js_display(["o_kernel_eval", expr])
     let initial_state = inject(expr)
     let s = initial_state
     while (true) {	
@@ -1487,7 +1712,7 @@ function core_eval(expr) {
             if (state_m(s) === o_null) { 
                 return state_v(s)
             } else {
-                // console.log("core_eval: discarding tag form meta continuations")
+                // console.log("kernel_eval: discarding tag form meta continuations")
                 set_state_k(s,o_car(o_car(state_m(s))))
                 set_state_m(s,o_cdr(state_m(s)))
             }
@@ -1626,8 +1851,8 @@ let expr6  = parse( ["if", ["begin", 41, 42, false], 11, 22] )  // => 22
 let expr7  = parse( ["if", ["begin", 41, 42, 43],
                            ["begin", 11, 22],
                            ["begin", 33, 44]] )  // => 22
-let expr8  = parse( ["let1", "x", 42, "x"] ) // => 42
-let expr9  = parse( ["let1", "x", 42, "y"] ) // => error
+// let expr8  = parse( ["let", "x", 42, "x"] ) // => 42
+// let expr9  = parse( ["let", "x", 42, "y"] ) // => error
 let expr10 = parse( ["quote", 42] ) // => 42
 let expr11 = parse( ["lambda", ["x"], 42] )
 let expr12 = parse( ["cons", 41, 42] )
@@ -1697,89 +1922,147 @@ function primitiven(name, proc, mask) { return register_primitive(name, proc, di
 // mask -1 = any number
 // mask -2 = 1 or more
 
-let initial_env = make_empty_env()
-
-// Same order as
-//   https://docs.racket-lang.org/zuo/zuo-kernel.html#%28part._kernel-primitives%29
-
-initial_env = extend_env(initial_env, sym("pair?"),     primitive1("pair?",   o_is_pair))
-initial_env = extend_env(initial_env, sym("null?"),     primitive1("null?",   o_is_null))
-initial_env = extend_env(initial_env, sym("list?"),     primitive1("list?",   o_is_list))
-initial_env = extend_env(initial_env, sym("cons"),      primitive2("cons",    o_cons))
-initial_env = extend_env(initial_env, sym("car"),       primitive1("car",     o_car))
-initial_env = extend_env(initial_env, sym("cdr"),       primitive1("cdr",     o_cdr))
-initial_env = extend_env(initial_env, sym("list"),      primitiven("list",    o_list, -1))
-initial_env = extend_env(initial_env, sym("append"),    primitiven("append",  o_append, -1))
-initial_env = extend_env(initial_env, sym("reverse"),   primitive1("reverse", o_reverse))
-initial_env = extend_env(initial_env, sym("length"),    primitive1("length",  o_length))
-initial_env = extend_env(initial_env, sym("list-ref"),  primitive2("list-ref",o_list_ref))
-initial_env = extend_env(initial_env, sym("list-set"),  primitive3("list-set",o_list_set))
-
-initial_env = extend_env(initial_env, sym("number?"),     primitive1("number?",     o_is_number))
-initial_env = extend_env(initial_env, sym("zero?"),       primitive1("zero?",      o_is_zero))
-initial_env = extend_env(initial_env, sym("+"),           primitive2("+",           o_plus))
-initial_env = extend_env(initial_env, sym("-"),           primitive2("-",           o_minus))
-initial_env = extend_env(initial_env, sym("*"),           primitive2("*",           o_mult))
-initial_env = extend_env(initial_env, sym("/"),           primitive2("/",           o_div))
-initial_env = extend_env(initial_env, sym("quotient"),    primitive2("quotient",    o_quotient))
-initial_env = extend_env(initial_env, sym("remainder"),   primitive2("remainder",   o_remainder))
-initial_env = extend_env(initial_env, sym("modulo"),      primitive2("modulo",      o_modulo))
-initial_env = extend_env(initial_env, sym("="),           primitive2("=",           o_eql))
-initial_env = extend_env(initial_env, sym("<"),           primitive2("<",           o_lt))
-initial_env = extend_env(initial_env, sym("<="),          primitive2("<=",          o_le))
-initial_env = extend_env(initial_env, sym(">"),           primitive2(">",           o_gt))
-initial_env = extend_env(initial_env, sym(">="),          primitive2(">=",          o_ge))
-initial_env = extend_env(initial_env, sym("bitwise-and"), primitive2("bitwise-and", o_bitwise_and))
-initial_env = extend_env(initial_env, sym("bitwise-ior"), primitive2("bitwise-ior", o_bitwise_ior))
-initial_env = extend_env(initial_env, sym("bitwise-xor"), primitive2("bitwise-xor", o_bitwise_xor))
-initial_env = extend_env(initial_env, sym("bitwise-not"), primitive1("bitwise-not", o_bitwise_not))
-
-initial_env = extend_env(initial_env, sym("string?"),        primitive1("string?",       o_is_string))
-initial_env = extend_env(initial_env, sym("string-length"),  primitive1("string-length", o_string_length))
-initial_env = extend_env(initial_env, sym("string-ref"),     primitive2("string-ref",    o_string_ref))
-initial_env = extend_env(initial_env, sym("substring"),      primitive23("substring",    o_substring))
-initial_env = extend_env(initial_env, sym("string"),         primitiven("string",        o_string, -1))
-initial_env = extend_env(initial_env, sym("string=?"),       primitive2("string=?",      o_string_equal))
-initial_env = extend_env(initial_env, sym("string-ci=?"),    primitive2("string-ci=?",   o_string_ci_equal))
-initial_env = extend_env(initial_env, sym("string<?"),       primitive2("string<?",      o_string_lt))
-initial_env = extend_env(initial_env, sym("string-split"),   primitive12("string-split", o_string_split))
-
-initial_env = extend_env(initial_env, sym("symbol?"),        primitive1("symbol?",       o_is_symbol))
-initial_env = extend_env(initial_env, sym("symbol->string"), primitive1("symbol->string",o_symbol_to_string))
-initial_env = extend_env(initial_env, sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
-initial_env = extend_env(initial_env, sym("string->uninterned-symbol"),
-                               primitive1("string->uninterned-symbol", o_string_to_uninterned_symbol))
-
-initial_env = extend_env(initial_env, sym("hash?"),       primitive1("hash?",      o_is_hash))
-initial_env = extend_env(initial_env, sym("hash"),        primitiven("hash",       o_hash, -1))
-initial_env = extend_env(initial_env, sym("hash-ref"),    primitive23("hash-ref",  o_hash_ref))
-initial_env = extend_env(initial_env, sym("hash-set!"),   primitive3("hash-set!",  o_hash_set))
-
-initial_env = extend_env(initial_env, sym("eq?"),         primitive2("eq?",        o_is_eq))
-initial_env = extend_env(initial_env, sym("not"),         primitive1("not",        o_not))
-initial_env = extend_env(initial_env, sym("void"),        primitiven("void",       o_void_f, -1))
-
-initial_env = extend_env(initial_env, sym("module-path?"),primitive1("module-path?", o_is_module_path))
+const hash_mode = Symbol("hash_mode")
+const env_mode  = Symbol("env_mode")
+const top_mode  = Symbol("env_mode")
 
 
-initial_env = extend_env(initial_env, sym("procedure?"),  primitive1("procedure?", o_is_procedure))
-initial_env = extend_env(initial_env, sym("apply"),       o_apply)
-initial_env = extend_env(initial_env, sym("call/cc"),     o_callcc)
-initial_env = extend_env(initial_env, sym("call/prompt"), o_call_prompt)
+function make_top_env(mode) {
+    // set env
+    let env = false
+    if (mode === env_mode)
+        env = make_empty_env()
+    else if (mode === hash_mode)
+        env = make_empty_hash()        
+    
+    // extend env with elements
+    let extend = false
+    if (mode === env_mode)
+        extend = (name,val) => env = extend_env(env, name, val)
+    else if (mode === hash_mode)
+        extend = (name,val) => o_hash_set(env, name, val)
+    else
+        extend = (name,val) => extend_top_level(symbol_key(name), val)
 
-initial_env = extend_env(initial_env, sym("string-read"),primitive123("string-read", o_string_read))
+    // Same order as
+    //   https://docs.racket-lang.org/zuo/zuo-kernel.html#%28part._kernel-primitives%29
 
+    extend(sym("pair?"),       primitive1("pair?",       o_is_pair))
+    extend(sym("null?"),       primitive1("null?",       o_is_null))
+    extend(sym("list?"),       primitive1("list?",       o_is_list))
+    extend(sym("cons"),        primitive2("cons",        o_cons))
+    extend(sym("car"),         primitive1("car",         o_car))
+    extend(sym("cdr"),         primitive1("cdr",         o_cdr))
+    extend(sym("list"),        primitiven("list",        o_list,   -1))
+    extend(sym("append"),      primitiven("append",      o_append, -1))
+    extend(sym("reverse"),     primitive1("reverse",     o_reverse))
+    extend(sym("length"),      primitive1("length",      o_length))
+    extend(sym("list-ref"),    primitive2("list-ref",    o_list_ref))
+    extend(sym("list-set"),    primitive3("list-set",    o_list_set))
 
-// Singletons
-initial_env = extend_env(initial_env, sym("null"),        o_null)
+    extend(sym("number?"),     primitive1("number?",     o_is_number))
+    extend(sym("zero?"),       primitive1("zero?",       o_is_zero))
+    extend(sym("+"),           primitive2("+",           o_plus))
+    extend(sym("-"),           primitive2("-",           o_minus))
+    extend(sym("*"),           primitive2("*",           o_mult))
+    extend(sym("/"),           primitive2("/",           o_div))
+    extend(sym("quotient"),    primitive2("quotient",    o_quotient))
+    extend(sym("remainder"),   primitive2("remainder",   o_remainder))
+    extend(sym("modulo"),      primitive2("modulo",      o_modulo))
+    extend(sym("="),           primitive2("=",           o_eql))
+    extend(sym("<"),           primitive2("<",           o_lt))
+    extend(sym("<="),          primitive2("<=",          o_le))
+    extend(sym(">"),           primitive2(">",           o_gt))
+    extend(sym(">="),          primitive2(">=",          o_ge))
+    extend(sym("bitwise-and"), primitive2("bitwise-and", o_bitwise_and))
+    extend(sym("bitwise-ior"), primitive2("bitwise-ior", o_bitwise_ior))
+    extend(sym("bitwise-xor"), primitive2("bitwise-xor", o_bitwise_xor))
+    extend(sym("bitwise-not"), primitive1("bitwise-not", o_bitwise_not))
 
+    extend(sym("string?"),        primitive1("string?",        o_is_string))
+    extend(sym("string-length"),  primitive1("string-length",  o_string_length))
+    extend(sym("string-ref"),     primitive2("string-ref",     o_string_ref))
+    extend(sym("substring"),      primitive23("substring",     o_substring))
+    extend(sym("string"),         primitiven("string",         o_string, -1))
+    extend(sym("string=?"),       primitive2("string=?",       o_string_equal))
+    extend(sym("string-ci=?"),    primitive2("string-ci=?",    o_string_ci_equal))
+    extend(sym("string<?"),       primitive2("string<?",       o_string_lt))
+    extend(sym("string-split"),   primitive12("string-split",  o_string_split))
+
+    extend(sym("symbol?"),        primitive1("symbol?",        o_is_symbol))
+    extend(sym("symbol->string"), primitive1("symbol->string", o_symbol_to_string))
+    extend(sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
+    extend(sym("string->uninterned-symbol"), primitive1("string->uninterned-symbol",
+                                                        o_string_to_uninterned_symbol))
+
+    extend(sym("hash?"),       primitive1("hash?",        o_is_hash))
+    extend(sym("hash"),        primitiven("hash",         o_hash, -1))
+    extend(sym("hash-ref"),    primitive23("hash-ref",    o_hash_ref))
+    extend(sym("hash-set!"),   primitive3("hash-set!",    o_hash_set))
+
+    extend(sym("eq?"),         primitive2("eq?",          o_is_eq))
+    extend(sym("not"),         primitive1("not",          o_not))
+    extend(sym("void"),        primitiven("void",         o_void_f, -1))
+
+    extend(sym("module-path?"),primitive1("module-path?", o_is_module_path))
+
+    extend(sym("top-ref"),      primitive1("top-ref",      o_top_ref))
+    extend(sym("kernel-env"),   primitive0("kernel-env",   o_kernel_env))
+
+    extend(sym("procedure?"),  primitive1("procedure?",   o_is_procedure))
+
+    extend(sym("apply"),       o_apply)
+    extend(sym("call/cc"),     o_callcc)
+    extend(sym("call/prompt"), o_call_prompt)
+
+    extend(sym("string-read"), primitive123("string-read", o_string_read))
+
+    // Singletons
+    extend(sym("null"),        o_null)
+
+    // Besides the primitives above, we also have `module->hash`
+    // which is implemented as a closure.
+
+    extend(sym("module->hash"),
+/*
+  (lambda (mod) "module->hash"
+   (let ([arg (module->hash* mod)])
+    (if (hash? arg)
+     arg
+     (register-module
+      mod
+      (apply (get-read-and-eval (car arg) (module->hash (car arg)))
+             (cdr arg)))))
+ */
+
+    list( lambda_symbol, list(sym("mod")), make_string("module->hash"),
+          list(let_symbol, list( list(sym("arg"), list(sym("module->hash*"), sym("mod")))),
+                   list(if_symbol, list(sym("hash?"), sym("arg")),
+                        sym("arg"),
+                        list(sym("register-module"),
+                             sym("mod"),
+                             list(sym("apply"),
+                                  list(sym("get-read-and-eval"),
+                                       list(sym("car"), sym("arg")),
+                                       list(sym("module->hash"), list(sym("car"), sym("arg")))),
+                                  list(sym("cdr"), sym("arg"))))))))
+
+    return env
+}
+
+let o_top_env   = make_top_env(top_mode)  // inserts directly into top_level
+let initial_env = make_top_env(env_mode)
+
+//
+// TESTS
+//
 
 // console.log( read_from_string( " ( foo bar 43 baz + +3 -10 -a - 10. 11.1 12.34 .34 .bar ..4 ... #t #f oo ' ` , ,@ )"))
 
 //let expr42 = parse1("(let1 h (hash 'foo 42 'bar 43) 44)")
 //js_write(expr42)
 //js_display(format(expr42))
-//js_display(format(core_eval(expr42)))
+//js_display(format(o_kernel_eval(expr42)))
 
 
 //let expr43 = parse1("(a 'b)")
@@ -1886,11 +2169,50 @@ let expr117 = parse1("(module-path? \"\")")
 let expr118 = parse1("(string-read \"1 x foo (11 22) #t \")")
 let expr119 = parse1("(string-read \"1\")")
 
-js_display(format(core_eval(expr118)))
+// js_display(format(o_kernel_eval(expr118)))
 
 
-//js_display(format(core_eval(expr74)))
-//js_display(format(core_eval(expr75)))
-//js_display(format(core_eval(expr76)))
-//js_display(format(core_eval(expr77)))
-//js_display(format(core_eval(expr78)))
+//js_display(format(o_kernel_eval(expr74)))
+//js_display(format(o_kernel_eval(expr75)))
+//js_display(format(o_kernel_eval(expr76)))
+//js_display(format(o_kernel_eval(expr77)))
+//js_display(format(o_kernel_eval(expr78)))
+
+//o_pending_modules = o_cons(sym("kernel"), o_pending_modules)
+// js_write(register_module( sym("kernel"), o_hash( array_to_list([sym("foo"), 42]) ) ))
+
+
+//let sp = make_string_input_port("#lang foo")
+//js_write(read_language(sp))
+//js_write(sp)
+
+
+
+// js_write(o_tilde_v(list(make_string("a"), sym("foo"))))
+// js_write(o_tilde_s(list(make_string("a"), sym("foo"))))
+// js_write(o_tilde_a(list(make_string("a"), sym("foo"))))
+
+o_library_path = "lib"
+// js_write(library_path_to_file_path(sym("rac")))
+
+// js_write( file_to_string(library_path_to_file_path(sym("rac"))))
+
+
+//js_write( module_to_hash_star(sym("rac")) )
+
+//js_write( o_top_ref(sym("+")))
+
+
+// js_write(initial_env)
+// js_write(make_top_env(env_mode, hash_mode))
+
+// js_display(format(o_kernel_eval(parse1("(hash-ref (kernel-env) (quote +))"))))
+
+// js_display(format(o_kernel_eval(parse1("(module->hash (quote rac))"))))
+
+// js_display( format(o_kernel_eval(parse1("module->hash")), write_mode))
+
+// js_display( format(parse1("(let ((x 1)) (+ x 42))"), write_mode))
+
+js_display( format(o_kernel_eval(parse1("(let ((x 1)) (+ x 42))")), write_mode))
+

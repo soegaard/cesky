@@ -1,0 +1,5 @@
+#lang rac/kernel
+(hash (quote result)
+      "Hello world")
+      
+      

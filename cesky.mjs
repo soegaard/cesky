@@ -196,7 +196,16 @@ function is_pair(o)     { return Array.isArray(o) && (tag(o) === pair_tag) }
 function o_is_pair(o)   { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
 function o_is_null(o)   { return make_boolean(o === o_null) }
 function o_cons(o1,o2)  { return [pair_tag, o1, o2] }
-function o_car(o)       { return is_pair(o) ? o[1] : fail_expected1("car", "pair", o) }
+function o_car(o)       {
+    if (is_pair(o))
+        return o[1]
+    else {
+        js_write(o)
+        fail_expected1("car", "pair", o)
+    }
+}
+//    return is_pair(o) ? o[1] : fail_expected1("car", "pair", o)
+
 function o_cdr(o)       { return is_pair(o) ? o[2] : fail_expected1("cdr", "pair", o) }
 function set_car(o,a)   { o[1] = a }
 function set_cdr(o,d)   { o[2] = d }
@@ -581,7 +590,10 @@ function build_path(base, rel) {
 }
 
 function file_to_string(path) {
-    let s = fs.readFileSync(string_string(path), "utf8")
+    js_display("file_to_string")
+    path = (is_string(path) ? string_string(path) : path)
+    
+    let s = fs.readFileSync(path, "utf8")
     return s
 }
 
@@ -629,7 +641,7 @@ function module_to_hash_star(mp) {
     while (! (ps === o_null)) {
         if ( module_path_equal(o_car(ps), mp) )
             throw new Error("cycle in module loading, while loading: " + format(mp))
-        ms = o_cdr(ms)
+        ps = o_cdr(ps)
     }
 
     // mp is not declared, so we must prepare loading it
@@ -1281,13 +1293,16 @@ function read_from_string(s) {
 }
 
 function o_string_read(str, start, where) {
+    js_display("o_string_read")
+    js_write(str)
+    js_write(start)
+    js_write(where)
+    
     let who = "string-read"
     if (start === undefined)
         start = make_number(0)
     if (where === undefined)
         where = false
-    else
-        check_string("string-read", where)    
     check_string(who, str)
     check_integer(who, start)
     let idx = check_string_index(who, str, start);
@@ -1584,7 +1599,7 @@ function step( s ) {
                 let new_k = [if_k, [e1, e2], state_k(s), state_env(s)]
                 set_state_k(s,new_k)
             } else if (rator === lambda_symbol) {
-                v = make_closure(e, env)
+                v = make_closure(e, state_env(s))
             } else if (rator === begin_symbol) {
                 let e0 = o_car(o_cdr(e))
                 let es = o_cdr(o_cdr(e))
@@ -1672,7 +1687,8 @@ function continue_step(s) {
                 } else if (rator === o_kernel_eval) {
                     js_display("KERNEL EVAL")
                     //js_display("env before")
-                    //js_write(env)
+                    js_display("args")
+                    js_write(args)
                     count = js_list_length(args)
                     if (count != 1)
                         fail_arity(o_kernel_eval, args)

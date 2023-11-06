@@ -182,9 +182,13 @@ function o_not(o) {
     return (o === o_false) ? o_true : o_false
 }
 
-const o_undefined = [singleton_tag]
+const o_undefined = [singleton_tag, "undefined"]
 function is_undefined(o)   { return o === o_undefined }
 function o_is_undefined(o) { return make_boolean(o === o_undefined) }
+
+const o_eof = [singleton_tag, "eof"]
+function is_eof(o)   { return o === o_eof }
+function o_is_eof(o) { return make_boolean(o === o_eof) }
 
 
 // NULL, PAIRS, LISTS
@@ -609,6 +613,7 @@ function library_path_to_file_path(path) {
     let rel = o_tilde_a(list(o_symbol_to_string(path),
                              saw_slash ? make_string("") : make_string("/main"),
                              make_string(".rac")))
+    rel = string_string(rel)
     return build_path(o_library_path, rel)
 }
 
@@ -987,10 +992,16 @@ function skip_atmosphere(sp) {
 }
 
 // Tokens
-const LPAREN = Symbol.for("(")
-const RPAREN = Symbol.for(")")
-const DOT    = Symbol.for(".")
-const QUOTE  = Symbol.for("'")
+const LPAREN          = Symbol.for("(")
+const RPAREN          = Symbol.for(")")
+const LBRACKET        = Symbol.for("[")
+const RBRACKET        = Symbol.for("]")
+const DOT             = Symbol.for(".")
+const QUOTE           = Symbol.for("'")
+const QUASIQUOTE      = Symbol.for("`")
+const UNQUOTE         = Symbol.for(",")
+const UNQUOTESPLICING = Symbol.for(",@")
+const HASHSEMICOLON   = Symbol.for("#;")
 
 function lex(sp) {
     skip_atmosphere(sp)
@@ -1001,6 +1012,8 @@ function lex(sp) {
     else if (is_digit(c)) { return lex_number(sp) }
     else if (c == "(")    { read_char(sp) ; return LPAREN }
     else if (c == ")")    { read_char(sp) ; return RPAREN }
+    else if (c == "[")    { read_char(sp) ; return LBRACKET }
+    else if (c == "]")    { read_char(sp) ; return RBRACKET }
     else if (c == "'")    { read_char(sp) ; return QUOTE }
     else if (c == "\"")   { return lex_string(sp) }
     else if (c == "+") {
@@ -1031,22 +1044,25 @@ function lex(sp) {
     } else if (c == "#") {
         read_char(sp)
         let p = peek_char(sp)
-        if ( (p == "t") || (p = "f") ) {
+        if ( (p === "t") || (p === "f") ) {
             return lex_boolean(sp)
+        } else if ( p === ";" ) {
+            read_char(sp)
+            return HASHSEMICOLON
         } else {
             back_char(sp)
             return lex_symbol(sp)           
         }
     } else if (c == "`") {
         read_char(sp)
-        return quasiquote_symbol
+        return QUASIQUOTE
     } else if (c == ",") {
         read_char(sp)
         if (peek_char(sp) == "@") {
             read_char(sp)
-            return unquote_splicing_symbol
+            return UNQUOTESPLICING
         } else
-            return unquote_symbol
+            return UNQUOTE
     } else {
         return lex_symbol(sp)
     }
@@ -1067,6 +1083,7 @@ function lex_boolean(sp) {
             read_error("bad syntax '#f" + peek_char(sp) + "'")
         }
     } else {
+        js_write(c)
         throw Error("lex_boolean: internal error")
     }
 }
@@ -1153,23 +1170,244 @@ function reverse_star(o, last_cdr) {
 }
 
 //  <program>    ::= <s> ...
-//  <s>          ::= <atom>
+//  <s>          ::= <literal>
 //                |  (<s> ...) 
 //                |  (<s> ... . <s>) 
 //                |  '<s>
+// Note: [ ] can be used instead of ( ).
 
 // https://docs.racket-lang.org/zuo/reader.html
 
+function is_literal(token) {
+    let t = token
+    return (is_boolean(t)
+            || is_number(t)
+            || is_string(t)
+            || is_symbol(t))    
+}
+            
+
+function parse_s_expr(tokens, i) {
+    // parse a single s-expression from the
+    // tokens tokens[i], tokens[i+1], ....
+    // Return an array with two elements:
+    //   - the parsed s-expressions
+    //   - the index just after the last token used
+
+    let n = tokens.length
+    const EOT = Symbol("End of tokens")
+    function peek ()    { return (i<n ? tokens[i] : EOT ) }
+    function skip ()    { if (i<n) i++ }
+    function read ()    { return (i<n ? tokens[i++] : EOT ) }
+    // output        
+    let out = o_null // accumulator
+    // Stack of commands
+    let stack   = []
+    let stack_i = 0
+    function push(cmd)          { stack[stack_i++] = [cmd,false]; }
+    function pushout(cmd)       { stack[stack_i++] = [cmd,out]; out = o_null }
+    function pushdata(cmd,data) { stack[stack_i++] = [cmd,data]; }
+    function pop()              { return stack[--stack_i] }
+    function is_stack_empty()   { return stack_i === 0 }
+    function head()             { return stack[stack_i-1] }
+    
+    let t = false
+    let obj = o_undefined 
+    while (1) {
+        if ( (obj !== o_undefined) && is_stack_empty())
+            return obj
+
+        if (obj === o_undefined) {
+            js_display("reading new token")
+            t = read()
+            js_display("new token")
+            js_write(t)
+            if (is_literal(t)) 
+                obj = t
+            if (t === EOT)
+                throw new Error( "unexpected end of file" )
+        }
+        
+        js_display("stack")
+        js_write(stack)
+        js_display("token")
+        js_write(t)
+        js_display("obj")
+        js_write(obj)
+
+        // All tokens (non-literals):
+        //   LPAREN, RPAREN, LBRACKET, RBRACKET, DOT
+        //   QUOTE, QUASIQUOTE, UNQUOTE, UNQUOTESPLICING
+
+        if ((t === LPAREN) || (t === LBRACKET)) {
+            js_display("token = LPAREN or LBRACKET")
+            obj = o_undefined
+            let c = (t === LPAREN) ? "in paren list" : "in bracket list"
+            pushdata(c, [c, o_null, o_null] ) //  data = [command,  first pair, last pair]
+        }
+        else if (t === QUOTE) {
+            js_display("token = QUOTE")
+            obj = o_undefined
+            pushdata("in quote", sym("quote"))
+        }
+        else if (t === QUASIQUOTE) {
+            js_display("token = QUASIQUOTE")
+            obj = o_undefined
+            pushdata("in quote", sym("quasiquote"))
+        }
+        else if (t === UNQUOTE) {
+            js_display("token = UNQUOTE")
+            obj = o_undefined
+            pushdata("in quote", sym("unquote"))
+        }
+        else if (t === UNQUOTESPLICING) {
+            js_display("token = UNQUOTESPLICING")
+            obj= o_undefined
+            pushdata("in quote", sym("unquote-splicing"))
+        }
+        else if (t === HASHSEMICOLON) {
+            js_display("token = HASHSEMICOLON")
+            obj = o_undefined
+            pushdata("in discard", o_null)
+        }
+        else if (t === DOT) {
+            if (!is_stack_empty() && (head()[0] == "in paren list") ) {
+                head()[0]    = "in paren pair"
+                head()[1][0] = "in paren pair"
+            }
+            else if (!is_stack_empty() && (head()[0] == "in bracket list") ) {
+                head()[0]    = "in bracket pair"
+                head()[1][0] = "in bracket pair"
+            }
+            else
+                throw new Error("misplaced '.'")
+            obj = o_undefined
+        }
+        else if ( (t === RPAREN) || (t === RBRACKET)) {
+            js_display("RPAREN or RBRACKET")
+            let want_list = ((t === RPAREN) ? "in paren list" : "in bracket list")
+            let want_pair = ((t === RPAREN) ? "in paren pair" : "in bracket pair")
+            //  data = [command,  first pair, last pair]
+            if (!is_stack_empty() && ((head()[0] == want_list)
+                                      || ((head()[0] == want_pair)))) {
+                js_display("closer: in paren/bracket list")
+                let inst = pop()
+                // let cmd  = inst[0]
+                let data = inst[1]
+                obj = data[1]
+            } else if ((!is_stack_empty()) && (head()[0] === "in paren end")) {
+                js_display("closer: in paren end")
+                if (t === RPAREN) {
+                    let inst = pop()
+                    let data = inst[1]
+                    js_display("data")
+                    js_write(data)
+                    obj = data
+                } else
+                    throw new Error("expected end paren, but got end bracket")
+            } else if ((!is_stack_empty()) && (head()[0] === "in bracket end")) {
+                js_display("closer: in bracket end")
+                if (t === RBRACKET) {
+                    let inst = pop()
+                    let data = inst[1]
+                    obj = data
+                } else
+                    throw new Error("expected end bracket, but got end paren")
+            } else {
+                js_display("unbalanced closer")
+                obj = o_undefined
+            }
+        }
+        else if (is_stack_empty()) {
+            js_display("empty stack: ")
+            if ( obj !== o_undefined ) {
+                return obj
+            }
+            if (t === EOT)
+                return o_eof
+            if (t === RPAREN) 
+                throw new Error( "Unexpected right paren" )
+            if (t === RBRACKET) 
+                throw new Error( "Unexpected right bracket" )
+            if (t === DOT) 
+                throw new Error( "Unexpected dot" )
+        }
+        while(!is_stack_empty()) {
+            js_display("non-empty stack: ")
+            if (obj === o_undefined) {
+                js_display("breaking before popping")
+                // the commands needs an object to operate on
+                break
+            }
+            let inst = pop()
+            let cmd  = inst[0]
+            let data = inst[1]
+
+            js_display("cmd = " + cmd)
+
+            
+            if (cmd === "in quote") {
+                js_display(cmd)
+                if (obj === o_eof)
+                    throw new Error("end of file")
+                // data contains either 'quote 'quasiquote 'unquote or 'unquote-splicing
+                obj = list(data, obj)
+            } else if (cmd === "in discard") { // #; comment
+                js_display(cmd)
+                if (is_eof(obj))
+                    throw new Error( "end of file after hash-semicolon comment" )
+                obj = o_undefined
+                break
+            } else if ( (cmd === "in paren list") || (cmd === "in bracket list")) {
+                js_display(cmd)
+                if (obj === o_eof)
+                    throw new Error("missing closer")
+                else {
+                    // `(` pushes "paren list" and
+                    //  data = [command,  first pair, last pair]
+                    let new_pair = o_cons(obj, o_null)  
+                    if (data[1] === o_null)  // no pairs yet
+                        pushdata(cmd, [cmd, new_pair, new_pair])
+                    else {
+                        set_cdr(data[2], new_pair)
+                        pushdata(cmd, [cmd, data[1], new_pair])
+                    }
+                    obj = o_undefined // read next token
+                    break
+                }
+            } else if ( (cmd === "in paren pair") || (cmd === "in bracket pair")) {
+                js_display(cmd)
+                //  data = [command,  first pair, last pair]
+                if (obj === o_eof) 
+                    throw new Error("end of file after dot")
+                else {
+                    js_display("data")
+                    js_write(data)
+                    set_cdr(data[2], obj) // put obj in the last pair
+                    js_write(data)
+                    let new_cmd = ( (cmd === "in paren pair") ? "in paren end" : "in bracket end" )
+                    pushdata(new_cmd, data[1])
+                    obj = o_undefined // read next token
+                    break
+                }                
+            }
+        }
+    }
+}
+
+
 function parse_tokens(tokens) {
-    // "input port" of tokens
+    // Parse the array of tokens in `tokens`.
+    // Return an S-expression.
+    
     // js_write(tokens)
     let i = 0
     let n = tokens.length
     const EOT = Symbol("End of tokens")
-    function peek () { return (i<n ? tokens[i] : EOT ) }
-    function skip () { if (i<n) i++ }
-    function read () { return (i<n ? tokens[i++] : EOT ) }
-    function done () { return i>=n }
+    function peek ()    { return (i<n ? tokens[i] : EOT ) }
+    function skip ()    { if (i<n) i++ }
+    function read ()    { return (i<n ? tokens[i++] : EOT ) }
+    // function is_done () { return i>=n }
     // output        
     let out = o_null // accumulator
     // Stack of commands
@@ -1183,14 +1421,16 @@ function parse_tokens(tokens) {
 
     push( "program" )
     while(!is_stack_empty()) {
-        // js_display("--")
-        // js_write(out)
-        // js_write(stack)
         let inst = pop()
         let cmd  = inst[0]
         let data = inst[1]
-        // js_display(cmd)
-
+        js_display(cmd)
+        js_display("tokens left")
+        js_write(tokens.slice(i,-1))
+        js_display("out")
+        js_write(format(out))
+        // js_write(stack)
+        
         if (cmd == "program") {
             if (peek() === EOT) 
                 return o_reverse(out)
@@ -1214,7 +1454,12 @@ function parse_tokens(tokens) {
                 out = o_cons( t, out )
             }
         } else if (cmd == "quote") {
-            out = o_cons( o_cons(quote_symbol, out), data )
+            //js_display("cmd: quote")
+            //js_display("out")
+            //js_write(out)
+            out = list( list( quote_symbol, o_car(out)),
+                        o_cdr(out) )
+                        
         } else if (cmd == "list_suffix") {
             let t = read()
             if (t === EOT) {
@@ -1230,9 +1475,9 @@ function parse_tokens(tokens) {
                 pushdata("list*_suffix",data)
             } else if (t === QUOTE) {
                 console.log("list quote")
-                pushout("list_suffix")
+                // pushout("list_suffix")
                 push("quote")
-                push("s")
+                // push("s")
             } else {
                 out = o_cons( t, out )
                 pushdata("list_suffix",data)
@@ -1257,7 +1502,7 @@ function parse_tokens(tokens) {
                 throw new Error("unexpected .")
             } else if (t === QUOTE) {
                 console.log("list* quote")
-                pushdata("list*_suffix",data)
+                // pushdata("list*_suffix",data)
                 pushout("quote")
                 push("s")
             } else {
@@ -1339,9 +1584,9 @@ function to_string(os, mode) {
     return fs.join(mode === display_mode ? "" : " ")
 }
 
-function o_tilde_v(os) { return to_string(os, print_mode)   } // TODO WIP use mode in o_to_string 
-function o_tilde_s(os) { return to_string(os, write_mode)   } // TODO WIP
-function o_tilde_a(os) { return to_string(os, display_mode) } // TODO WIP
+function o_tilde_v(os) { return make_string(to_string(os, print_mode))   } // TODO WIP use mode in o_to_string 
+function o_tilde_s(os) { return make_string(to_string(os, write_mode))   } // TODO WIP
+function o_tilde_a(os) { return make_string(to_string(os, display_mode)) } // TODO WIP
 
 function format_symbol(o, mode)  { return (mode === print_mode ? "'" : "") + symbol_string(o) }
 function format_number(o)        { return number_value(o).toString() }
@@ -1959,16 +2204,20 @@ function make_top_env(mode) {
     extend(sym("string->uninterned-symbol"), primitive1("string->uninterned-symbol",
                                                         o_string_to_uninterned_symbol))
 
-    extend(sym("hash?"),       primitive1("hash?",        o_is_hash))
-    extend(sym("hash"),        primitiven("hash",         o_hash, -1))
-    extend(sym("hash-ref"),    primitive23("hash-ref",    o_hash_ref))
-    extend(sym("hash-set!"),   primitive3("hash-set!",    o_hash_set))
+    extend(sym("hash?"),        primitive1("hash?",        o_is_hash))
+    extend(sym("hash"),         primitiven("hash",         o_hash, -1))
+    extend(sym("hash-ref"),     primitive23("hash-ref",    o_hash_ref))
+    extend(sym("hash-set!"),    primitive3("hash-set!",    o_hash_set))
 
-    extend(sym("eq?"),         primitive2("eq?",          o_is_eq))
-    extend(sym("not"),         primitive1("not",          o_not))
-    extend(sym("void"),        primitiven("void",         o_void_f, -1))
+    extend(sym("eq?"),          primitive2("eq?",          o_is_eq))
+    extend(sym("not"),          primitive1("not",          o_not))
+    extend(sym("void"),         primitiven("void",         o_void_f, -1))
 
-    extend(sym("module-path?"),primitive1("module-path?", o_is_module_path))
+    extend(sym("module-path?"), primitive1("module-path?", o_is_module_path))
+
+    extend(sym("~v"),           primitiven("~v",           o_tilde_v, -1))
+    extend(sym("~a"),           primitiven("~a",           o_tilde_a, -1))          
+    extend(sym("~s"),           primitiven("~s",           o_tilde_s, -1))
 
     extend(sym("top-ref"),      primitive1("top-ref",      o_top_ref))
     extend(sym("kernel-env"),   primitive0("kernel-env",   o_kernel_env))
@@ -2186,6 +2435,8 @@ console.log("String Output Ports")
 console.log(test_string_output_ports())
 
 
+/*
+
 let expr0  = parse( 42 )
 let expr1  = parse( "fortytwo" )
 let expr2  = parse( ["if", true,  42, 43] )
@@ -2222,7 +2473,6 @@ let expr26 = parse( ["begin", ["define", "fact", ["lambda", ["x"],
                                                    ["*", "x", ["fact", ["-", "x", 1]]]]]],
                      ["fact", 5]] )
 
-/*
 let expr27 = parse1("(apply + (cons 1 (cons 2 null)))")
 let expr28 = parse1("(call/cc (lambda (x) x))")            // => some continuation
 let expr29 = parse1("(call/cc (lambda (k) (k 42)))")       // => 42
@@ -2263,6 +2513,8 @@ let expr37 = parse1("(list 1 2 3)")
 //let expr43 = parse1("(a 'b)")
 // js_write(expr43)
 //js_display(format(expr43))
+
+/*
 
 
 let expr42 = parse1("(pair? 42)")
@@ -2364,6 +2616,11 @@ let expr117 = parse1("(module-path? \"\")")
 let expr118 = parse1("(string-read \"1 x foo (11 22) #t \")")
 let expr119 = parse1("(string-read \"1\")")
 
+*/
+
+o_library_path = "lib"
+
+
 // js_display(format(o_kernel_eval(expr118)))
 
 
@@ -2387,7 +2644,6 @@ let expr119 = parse1("(string-read \"1\")")
 // js_write(o_tilde_s(list(make_string("a"), sym("foo"))))
 // js_write(o_tilde_a(list(make_string("a"), sym("foo"))))
 
-o_library_path = "lib"
 // js_write(library_path_to_file_path(sym("rac")))
 
 // js_write( file_to_string(library_path_to_file_path(sym("rac"))))
@@ -2462,12 +2718,32 @@ js_display(format(kernel_eval(parse1('(begin \
 
 // js_display(format(kernel_eval(parse1('(kernel-eval 42)'))))
 
-js_write(kernel_eval(parse1('(module->hash (quote "lib/rac/hello.rac"))')))
+// js_display(format(kernel_eval(parse1('(~v 42 43)'))))
 
 
+// js_display(format(kernel_eval(parse1(
+//     '(apply ~v (hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums)))'))))
 
 
+// js_write(read_from_string("(41 '42)"))
 
+js_display("--------------")
+// js_write(format(parse_tokens(read_from_string("(41 '42 43)"))))
 
+// js_write(read_from_string("'41 42"))
 
+// js_write(format(parse_tokens(read_from_string("(41 '42 43)"))))
+// js_write(format(parse_tokens(read_from_string("'41)"))))
 
+// let ts = read_from_string("('41 `42 '43 `44  \n\
+//                              ; line comment  \n\
+//                            ,45 ,@46 #;47 foo)")
+// js_write(ts)
+
+let ts = read_from_string("(41 42 \"43\" 44)")
+js_write(format(parse_s_expr(ts, 0)), write_mode)
+//js_write(ts)
+
+// js_write(parse_s_expr(ts, 0))
+//js_write(parse_s_expr(ts, 1))
+//js_write(parse_s_expr(ts, 2))

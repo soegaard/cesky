@@ -1,0 +1,18 @@
+#lang rac/private/stitcher
+
+;; Instantiates the expander for non-hygenic-by-default macros
+
+(define macro-protocol 'defmacro)
+(define merge-bindings-export-key 'defmacro-bindings)
+(define language-mod-path 'rac/private/base)
+
+(include "base-common/lib.rac")
+(include "base-common/bind-struct.rac")
+(include "base-common/state.rac")
+
+(include "base/s-exp.rac")
+
+(include "base-common/dynamic.rac")
+(include "base-common/bind.rac")
+(include "base-common/parse.rac")
+(include "base-common/entry.rac")

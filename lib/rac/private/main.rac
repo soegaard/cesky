@@ -1,0 +1,22 @@
+#lang rac/base
+
+(require rac/cmdline
+         rac/config
+         rac/thread
+         rac/build
+         rac/shell
+         rac/c
+         rac/glob
+         rac/jobserver
+         rac/dry-run)
+
+(provide (all-from-out rac/private/base/main
+                       rac/cmdline
+                       rac/config
+                       rac/thread
+                       rac/build
+                       rac/shell
+                       rac/c
+                       rac/glob
+                       rac/jobserver
+                       rac/dry-run))

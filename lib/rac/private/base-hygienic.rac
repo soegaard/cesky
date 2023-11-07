@@ -1,0 +1,18 @@
+#lang rac/private/stitcher
+
+;; Instantiates the expander for hygienic, set-of-scopes macros
+
+(define macro-protocol 'scope-sets)
+(define merge-bindings-export-key 'scope-sets-bindings)
+(define language-mod-path 'rac/private/base-hygienic)
+
+(include "base-common/lib.rac")
+(include "base-common/bind-struct.rac")
+(include "base-common/state.rac")
+
+(include "base-hygienic/syntax.rac")
+
+(include "base-common/dynamic.rac")
+(include "base-common/bind.rac")
+(include "base-common/parse.rac")
+(include "base-common/entry.rac")

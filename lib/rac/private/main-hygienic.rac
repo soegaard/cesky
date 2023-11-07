@@ -1,0 +1,6 @@
+#lang rac/hygienic/base
+
+(require rac/hygienic/cmdline)
+
+(provide (all-from-out rac/private/base-hygienic/main
+                       rac/hygienic/cmdline))

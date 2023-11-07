@@ -1,0 +1,25 @@
+#lang rac/datum
+
+(require "and-or.rac"
+         "syntax-error.rac"
+         "../pair.rac"
+         "../list.rac"
+         "let.rac"
+         "define.rac"
+         "opt-lambda.rac"
+         "quasiquote.rac"
+         "more-syntax.rac"
+         "../more.rac"
+         "struct.rac")
+
+(provide (all-from-out "and-or.rac"
+                       "syntax-error.rac"
+                       "../pair.rac"
+                       "../list.rac"
+                       "let.rac"
+                       "define.rac"
+                       "opt-lambda.rac"
+                       "quasiquote.rac"
+                       "more-syntax.rac"
+                       "../more.rac"
+                       "struct.rac"))

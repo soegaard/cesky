@@ -1,0 +1,4 @@
+#lang rac/kernel
+
+(let ([maker (hash-ref (module->hash 'rac/private/base) 'make-language #f)])
+  (maker 'rac/private/base/main))

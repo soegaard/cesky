@@ -1,11 +1,10 @@
 #lang rac/kernel
-
 ;; `#lang rac/datum` creates a module that just exports S-expressions,
 ;; which can useful with `include` for building `rac` and `rac/hygienic`
 ;; from a shared source
 
 (hash (quote read-and-eval)
-      (lambda (str start mod-path) "read-and-eval (from main.rac)"
-        (let ([es (string-read str start mod-path)])
+      (lambda (str start mod-path) "read-and-eval (from datums.rac)"
+        (let ((es (string-read str start mod-path)))
           (hash (quote datums) es))))
 

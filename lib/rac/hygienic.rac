@@ -1,0 +1,5 @@
+#lang rac/kernel
+
+(let ([maker (hash-ref (module->hash 'rac/private/base-hygienic) 'make-language #f)])
+  ;; `rac/hygenic` is analogous to `rac/base`, not `rac` 
+  (maker 'rac/private/base-hygienic/main))

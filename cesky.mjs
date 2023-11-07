@@ -2,6 +2,7 @@
 
 // Running
 //   node cesky.mjs
+
 // Linting
 //   npx eslint cesky.mjs
 
@@ -751,7 +752,7 @@ function primitive_to_id(o) {
 function id_to_primitive(id) {
     return registered_prims[id]
 }
-function dispatch0(proc, args) {
+function dispatch0(proc, args) { // eslint-disable-line 
     return proc()
 }
 function dispatch1(proc, args) {
@@ -1119,17 +1120,18 @@ function lex_symbol(sp) {
 }
 
 function lex_string(sp) {
-    let c  = read_char(sp) // the "
+    read_char(sp) // the "
     let cs = []
     let i  = 0
-    while (true) {
+    while (true) { // eslint-disable-line
         let c = read_char(sp)
         if (c === "\\") {
             let p = peek_char(sp)
             if      (p === "t")  { read_char(sp); cs[i++] = "\t" }
             else if (p === "n" ) { read_char(sp); cs[i++] = "\n" }
             else if (p === "\\") { read_char(sp); cs[i++] = "\\" }
-            else if (p === EOF)  { throw new Error("read: end-of-file object occurred while reading a string") }
+            else if (p === EOF)  { throw new Error(
+                "read: end-of-file object occurred while reading a string") }
             else                 { read_char(sp); cs[i++] = p    }
         } else if (c === "\"") {
             return make_string(cs.join(""))
@@ -1213,7 +1215,7 @@ function parse_s_expr(tokens, i) {
     
     let t = false
     let obj = o_undefined 
-    while (1) {
+    while (true) {  // eslint-disable-line
         if ( (obj !== o_undefined) && is_stack_empty())
             return obj
 
@@ -1907,7 +1909,7 @@ function continue_step(s) {
             js_write(rator)
             // js_display("env")
             // js_write(state_env(k))
-            while (true) { // loop in case of apply                
+            while (true) { // eslint-disable-line -- (loop in case of apply)
                 console.log("continue")
                 // console.log(js_list_length(state_m(s)))
                 // console.log("meta_k")
@@ -2079,7 +2081,7 @@ function kernel_eval(expr) {
     // js_display(["kernel_eval", expr])
     let initial_state = inject(expr)
     let s = initial_state
-    while (true) {	
+    while (true) { // eslint-disable-line  -- interpreter loop
 	step(s)
 	if (state_k(s) === o_done_k) {
             if (state_m(s) === o_null) { 

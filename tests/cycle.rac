@@ -1,0 +1,21 @@
+#lang rac
+
+(require "harness.rac")
+
+(alert "cycle")
+
+(define cycle-file (build-path tmp-dir "cycle.rac"))
+
+(define out (fd-open-output cycle-file :truncate))
+(fd-write out (~a "#lang rac\n"
+                  "(require \"cycle.rac\")\n"))
+(fd-close out)
+
+(check (run-rac `(require ,(if (relative-path? cycle-file)
+			       (build-path (hash-ref (runtime-env) 'dir) cycle-file)
+			       cycle-file))
+                (lambda (status out err)
+                  (and (not (= status 0))
+                       (equal? out "")
+		       (contains? err "cycle in module loading")))))
+

@@ -1,0 +1,7 @@
+#lang rac/hygienic
+
+(require "harness-hygienic.rac")
+
+(alert "syntactic forms, hygienic expander")
+
+(include "form-common.rac")

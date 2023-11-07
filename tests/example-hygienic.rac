@@ -1,0 +1,3 @@
+#lang rac/hygienic
+
+(include "example-common.rac")

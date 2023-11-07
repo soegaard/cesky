@@ -1,0 +1,17 @@
+#lang rac
+
+(require "harness.rac")
+
+(alert "c")
+
+(check (config-merge (hash 'CFLAGS "-O2") 'CFLAGS "-g")
+       (hash 'CFLAGS "-O2 -g"))
+
+(check (config-define (hash 'CFLAGS "-O2") "RAC")
+       (hash 'CFLAGS "-O2" 'CPPFLAGS "-DRAC"))
+
+(check (config-define (hash 'CPPFLAGS "-DSLOW") "RAC")
+       (hash 'CPPFLAGS "-DSLOW -DRAC"))
+
+(check (config-include (hash 'CPPFLAGS "-DSLOW") "rac/private")
+       (hash 'CPPFLAGS "-DSLOW -Irac/private"))

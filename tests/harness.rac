@@ -1,0 +1,5 @@
+#lang rac
+
+(define language-name 'rac/base)
+
+(include "harness-common.rac")

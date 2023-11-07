@@ -1,0 +1,7 @@
+#lang rac
+
+(require "harness.rac")
+
+(alert "syntactic forms")
+
+(include "form-common.rac")

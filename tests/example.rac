@@ -1,0 +1,3 @@
+#lang rac
+
+(include "example-common.rac")

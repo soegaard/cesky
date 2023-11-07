@@ -1,0 +1,5 @@
+#lang rac/hygienic
+
+(define language-name 'rac/hygienic)
+
+(include "harness-common.rac")

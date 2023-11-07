@@ -1217,7 +1217,7 @@ function parse_s_expr(tokens, i) {
     let obj = o_undefined 
     while (true) {  // eslint-disable-line
         if ( (obj !== o_undefined) && is_stack_empty())
-            return obj
+            return [obj, i]
 
         if (obj === o_undefined) {
             js_display("reading new token")
@@ -1226,8 +1226,11 @@ function parse_s_expr(tokens, i) {
             js_write(t)
             if (is_literal(t)) 
                 obj = t
-            if (t === EOT)
-                throw new Error( "unexpected end of file" )
+            if (t === EOT) {
+                if (!is_stack_empty())
+                    throw new Error( "unexpected end of file" )
+                return [o_eof, i]
+            }
         }
         
         js_display("stack")
@@ -1323,10 +1326,10 @@ function parse_s_expr(tokens, i) {
         else if (is_stack_empty()) {
             js_display("empty stack: ")
             if ( obj !== o_undefined ) {
-                return obj
+                return [obj, i]
             }
             if (t === EOT)
-                return o_eof
+                return [o_eof, i]
             if (t === RPAREN) 
                 throw new Error( "Unexpected right paren" )
             if (t === RBRACKET) 
@@ -1396,148 +1399,24 @@ function parse_s_expr(tokens, i) {
         }
     }
 }
-
-
-function parse_tokens(tokens) {
-    // Parse the array of tokens in `tokens`.
-    // Return an S-expression.
-    
-    // js_write(tokens)
-    let i = 0
-    let n = tokens.length
-    const EOT = Symbol("End of tokens")
-    function peek ()    { return (i<n ? tokens[i] : EOT ) }
-    function skip ()    { if (i<n) i++ }
-    function read ()    { return (i<n ? tokens[i++] : EOT ) }
-    // function is_done () { return i>=n }
-    // output        
-    let out = o_null // accumulator
-    // Stack of commands
-    let stack   = []
-    let stack_i = 0
-    function push(cmd)          { stack[stack_i++] = [cmd,false]; }
-    function pushout(cmd)       { stack[stack_i++] = [cmd,out]; out = o_null }
-    function pushdata(cmd,data) { stack[stack_i++] = [cmd,data]; }
-    function pop()              { return stack[--stack_i] }
-    function is_stack_empty()   { return stack_i === 0 }
-
-    push( "program" )
-    while(!is_stack_empty()) {
-        let inst = pop()
-        let cmd  = inst[0]
-        let data = inst[1]
-        js_display(cmd)
-        js_display("tokens left")
-        js_write(tokens.slice(i,-1))
-        js_display("out")
-        js_write(format(out))
-        // js_write(stack)
-        
-        if (cmd == "program") {
-            if (peek() === EOT) 
-                return o_reverse(out)
-            push("program")
-            push("s")
-        } else if (cmd == "s") {
-            let t = read()
-            
-            if (t === LPAREN) {
-                if (peek() === DOT) 
-                    throw new Error("parse_tokens: unexpected .")
-                pushout("list_suffix")
-            } else if (t === RPAREN) {
-                throw new Error("parse_tokens: unexected )")
-            } else if (t === DOT) {
-                throw new Error("parse_tokens: unexpected .")
-            } else if (t === QUOTE) {
-                pushout("quote")
-                push("s")
-            } else {
-                out = o_cons( t, out )
-            }
-        } else if (cmd == "quote") {
-            //js_display("cmd: quote")
-            //js_display("out")
-            //js_write(out)
-            out = list( list( quote_symbol, o_car(out)),
-                        o_cdr(out) )
-                        
-        } else if (cmd == "list_suffix") {
-            let t = read()
-            if (t === EOT) {
-                throw new Error("unexpected end of tokens")
-            } else if (t === RPAREN) {
-                out = o_cons( o_reverse(out), data )
-            } else if (t === LPAREN) {
-                if (peek() === DOT)
-                    throw new Error("parse_tokens: ( followed by .")
-                pushdata("list_suffix",data)
-                pushout("list_suffix")
-            } else if (t === DOT) {
-                pushdata("list*_suffix",data)
-            } else if (t === QUOTE) {
-                console.log("list quote")
-                // pushout("list_suffix")
-                push("quote")
-                // push("s")
-            } else {
-                out = o_cons( t, out )
-                pushdata("list_suffix",data)
-            }
-        } else if (cmd == "list*_suffix") {
-            let t = read()
-            if (t === EOT) {
-                throw new Error("unexpected end of tokens")
-            } else if (t === RPAREN) {
-                throw new Error("unexpected )")
-            } else if (t === LPAREN) {
-                if (peek() === RPAREN) {
-                    read()
-                    out = o_cons( reverse_star(out, o_null), data )
-                    if (!(peek() === RPAREN))
-                        throw new Error("parse_tokens: ) expected")
-                    read()
-                } else {
-                    throw new Error("unexpected (")
-                }
-            } else if (t === DOT) {
-                throw new Error("unexpected .")
-            } else if (t === QUOTE) {
-                console.log("list* quote")
-                // pushdata("list*_suffix",data)
-                pushout("quote")
-                push("s")
-            } else {
-                out = o_cons( reverse_star(out, t), data )
-                if (!(peek() === RPAREN))
-                    throw new Error("parse_tokens: ) expected")
-                read()
-            }
-        } else {
-            throw new Error("parse_tokens: internal error - unknown command")
-        }
-    }    
-    if (is_stack_empty()) {
-        return o_reverse(out)
-    } else {
-        throw new Error("parse_tokens: unclosed parenthesis detected")
-    }
-}
-        
             
 function read_from_string(s) {
     let sp = make_string_input_port(s)
     let tokens = []
     let i = 0
     let t = lex(sp)
-    // console.log(t)
     while (!(t === EOF)) {
         tokens[i++] = t
         t = lex(sp)
-        // console.log(t)
     }
     return tokens
 }
+
+function parse1(str) {
+    let tokens = read_from_string(str)
+    return parse_s_expr(tokens, 0)[0]
+}
+
 
 function o_string_read(str, start, where) {
     js_display("o_string_read")
@@ -1549,7 +1428,7 @@ function o_string_read(str, start, where) {
     if (start === undefined)
         start = make_number(0)
     if (where === undefined)
-        where = false
+        where = o_false
     check_string(who, str)
     check_integer(who, start)
     let idx = check_string_index(who, str, start);
@@ -1558,14 +1437,31 @@ function o_string_read(str, start, where) {
     set_string_input_port_pos(sp,idx)
     
     let tokens = []
-    let i = 0
+    let i = number_value(start)
     let t = lex(sp)
     while (!(t === EOF)) {
         tokens[i++] = t
         t = lex(sp)
     }
-    
-    return parse_tokens(tokens)
+
+    let first = o_null
+    let last  = false
+    i = 0
+    let obj = o_false
+    while (true) {
+        let obj_and_index = parse_s_expr(tokens, i)
+        obj = obj_and_index[0]
+        i   = obj_and_index[1]
+        if (obj === o_eof)
+            break
+        let p = o_cons(obj, o_null)
+        if (first === o_null)
+            first = p
+        else
+            set_cdr(last, p)
+        last = p
+    }    
+    return first
 }
     
 
@@ -1611,6 +1507,7 @@ function is_atom (o) {
         || (o === o_null)          
         || (o === o_void)           
         || (o === o_undefined)
+        || (o === o_eof)
         || (o === o_apply)          
         || (o === o_callcc)         
         || (o === o_call_prompt)
@@ -1637,6 +1534,7 @@ function format_atom (o, mode) {
     else if (t == hash_tag)           { return "#<hash>" }        
     else if (o === o_null)            { return "()" }
     else if (o === o_void)            { return "#<void>" }
+    else if (o === o_eof)             { return "#<eof>" }
     else if (o === o_undefined)       { return "#<undefined>" }
     else if (o === o_apply)           { return "#<procedure:apply>" }
     else if (o === o_callcc)          { return "#<procedure:call/cc>" }
@@ -2104,9 +2002,6 @@ function o_js_write(o) {
     return o_void
 }
 
-function parse1(str) {
-    return o_car(parse_tokens(read_from_string(str)))
-}
 
 
 
@@ -2742,10 +2637,16 @@ js_display("--------------")
 //                            ,45 ,@46 #;47 foo)")
 // js_write(ts)
 
-let ts = read_from_string("(41 42 \"43\" 44)")
-js_write(format(parse_s_expr(ts, 0)), write_mode)
+//let ts = read_from_string("(41 42 \"43\" 44)")
+// let ts = read_from_string("( 42 )")
+// js_write(format(parse_s_expr(ts, 0)), write_mode)
 //js_write(ts)
 
 // js_write(parse_s_expr(ts, 0))
 //js_write(parse_s_expr(ts, 1))
 //js_write(parse_s_expr(ts, 2))
+
+
+js_write(format(o_string_read(make_string("42 (43 44) 45"))))
+
+js_write(format(parse1("42 (43 44) 45")))

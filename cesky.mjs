@@ -18,8 +18,11 @@
 // Linting
 //   npx eslint cesky.mjs
 
-import util from 'node:util'
-import * as fs from 'node:fs'  // for readFileSync
+import util      from 'node:util'
+import * as fs   from 'node:fs'      // for readFileSync()
+import * as os   from 'node:os'      // for platform()
+import * as path from 'node:path'    // for isAbsolute()
+import { cwd }   from 'node:process'
 
 function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
@@ -246,6 +249,8 @@ function is_pair(o)     { return Array.isArray(o) && (tag(o) === pair_tag) }
 function o_is_pair(o)   { return make_boolean(Array.isArray(o) && (tag(o) === pair_tag)) }
 function o_is_null(o)   { return make_boolean(o === o_null) }
 function o_cons(o1,o2)  { return [pair_tag, o1, o2] }
+function car(o)         { return o[1] }  // unsafe
+function cdr(o)         { return o[2] }  // unsafe
 function o_car(o)       {
     if (is_pair(o))
         return o[1]
@@ -675,6 +680,155 @@ function o_is_module_path(o) {
         throw new Error("module-path?: expected a symbol or a string path")
 }
 
+function o_is_path_string(o) {
+    const who = "path-string?"
+    check_string(who, o)
+    const s = string_string(o)
+    if (s === "")
+        return o_false
+    if (/[\0]/.test(s))
+        return o_false
+    return o_true
+}
+
+function path_is_absolute(p) {
+    return path.isAbsolute(p)
+}
+function o_is_relative_path(o) {
+    check_path_string("relative-path?", o)
+    return make_boolean(!path_is_absolute(string_string(o)))
+}
+function getcwd() {
+    return process.cwd()
+}
+function o_current_directory() {
+    return make_string(getcwd())
+}
+
+function o_build_path_multi(who, paths, build_path2) {
+    // Checks that all paths (except perhaps the first)
+    // are relative paths. Then folds the list using the
+    // two argument version `build_path2`. 
+    //     build_path2 : obj obj -> obj
+    let pre = car(paths)
+    check_path_string(who, pre)
+
+    paths = cdr(paths)
+
+    while (1) {
+        if (paths === o_null)
+            return pre
+
+        let post  = car(paths)
+        paths = cdr(paths)
+
+        check_path_string(who, post)
+
+        if (path_is_absolute(string_string(post)))
+            throw new Error(who + ": additional path is not relative\ngiven: " + string_string(post))
+
+        pre = build_path2(pre, post)
+    }
+}
+function o_build_raw_path(paths) {
+    return o_build_path_multi("build-raw-path", paths, o_build_raw_path2)
+}
+function o_build_path(paths) {
+    return o_build_path_multi("build-path", paths, o_build_path2)
+}
+function o_normalize_input_path(path) {
+    /* Using "." is meant to work even if `path` is absolute: */
+    return o_build_path2(make_string("."), path)
+}
+function o_build_raw_path2(pre, post) {
+    // TODO: currently this is the same as o_build_path2
+    // path.join normalizes and returns "." to signal current directory
+    return make_string( path.join( string_string(pre), string_string(post) ) )
+}
+function o_build_path2(pre, post) {
+    // path.join normalizes and returns "." to signal current directory
+    return make_string( path.join( string_string(pre), string_string(post) ) )
+}
+
+
+function basename(p) {
+    return path.basename(p)
+}
+function dirname(p) {
+    let d = path.dirname(p)
+    return (d === ".") ? false : d
+}
+function o_split_path(path) {
+    const who = "split-path"
+    check_path_string(who, path)
+    let p = string_string(path)
+    let d = dirname(p)
+    let b = basename(p)
+    return o_cons( d ? make_string(d): o_false,  make_string(b) )
+}
+
+function o_build_module_path(base_mod_path, rel_mod_path) {
+    if (is_symbol(rel_mod_path))
+        return rel_mod_path
+    // TODO: pass who
+    // TODO: this does not match zuo
+    return o_build_path(list(base_mod_path, rel_mod_path))
+}
+
+
+/*
+
+function o_build_module_path(base_mod_path, rel_mod_path) {
+  const who = "build-module-path";
+  int ups = 0, strip_ups
+  zuo_t *rel_str
+
+    check_module_path(who, rel_mod_path);
+  let saw_slash = /[/]/.test(symbol_string(path))
+  if (!zuo_is_module_path(base_mod_path, &saw_slash))
+    zuo_fail_arg(who, "module path", base_mod_path);
+
+  if (rel_mod_path->tag == zuo_symbol_tag)
+    return rel_mod_path;
+
+  /* When an absolute path is given, normalization is the caller's problem: * /
+  if (zuo_path_is_absolute(ZUO_STRING_PTR(rel_mod_path)))
+    return rel_mod_path;
+
+  strip_ups = (base_mod_path->tag == zuo_symbol_tag);
+
+  rel_str = zuo_parse_relative_module_path(who, rel_mod_path, &ups, strip_ups);
+
+  if (base_mod_path->tag == zuo_symbol_tag) {
+    zuo_t *mod_path = ((zuo_symbol_t *)base_mod_path)->str;
+    if (!saw_slash)
+      mod_path = zuo_tilde_a(zuo_cons(mod_path, zuo_cons(zuo_string("/main"), z.o_null)));
+
+    while (ups) {
+      zuo_t *l = zuo_split_path(mod_path);
+      mod_path = _zuo_car(l);
+      if (mod_path == z.o_false)
+        zuo_fail1w(who, "too many up elements", rel_mod_path);
+      ups--;
+    }
+
+    mod_path = zuo_tilde_a(zuo_cons(mod_path, zuo_cons(rel_str, z.o_null)));
+    mod_path = zuo_string_to_symbol(mod_path);
+
+    if (!zuo_is_module_path(mod_path, &saw_slash))
+      zuo_fail1w(who, "relative path is not valid in a symbolic module path", rel_mod_path);
+
+    return mod_path;
+  } else {
+    base_mod_path = _zuo_car(zuo_split_path(base_mod_path));
+    if (base_mod_path == z.o_false)
+      base_mod_path = zuo_string(".");
+    return zuo_build_path2(base_mod_path, rel_str);
+  }
+}
+
+*/
+
 // private primitive
 function register_module(modpath, mod) {
     // js_display("> register-module")
@@ -777,8 +931,6 @@ function check_module_path(who, mp) {
 }
 
 
-let o_library_path = o_false  // o_false or absolute path
-
 function build_path(base, rel) {
     let out = base + "/" + rel
     return out
@@ -791,8 +943,9 @@ function file_to_string(path) {
     return s
 }
 
+let o_library_path = o_false  // o_false or absolute path
+
 function library_path_to_file_path(path) {
-    js_write(path)
     if ( !is_symbol(path) )
         throw new Error("module-path->path: expected a module path")
     if( o_library_path === o_false)
@@ -1003,6 +1156,11 @@ function check_numbers(name, o1, o2) {
     if (!is_number(o2))
         fail_expected1(name, "number", o2)
 }
+function check_path_string(who,o) {
+    if (o_is_path_string(o) === o_false)
+        fail_expected1(who, "path string", o)
+}
+
 function fail_expected1(name, type, value) {
     console.log(name + ":")
     console.log("  expected: " + type)
@@ -2274,16 +2432,18 @@ function make_top_env(mode) {
     extend(sym("call/prompt"),  o_call_prompt)
     
     // opaque, opaque-ref
-    // path-string?, build-path, build-raw-path, split-path, relative-path?
-    extend(sym("module-path?"), primitive1("module-path?", o_is_module_path))
-    // build-module-path
-
+    extend(sym("path-string?"),  primitive1("path-string?",   o_is_path_string))
+    extend(sym("build-path"),    primitiven("build-path",     o_build_path, -1))
+    extend(sym("build-raw-path"),primitiven("build-raw-path", o_build_raw_path, -1))
+    
+    extend(sym("split-path"),        primitive1("split-path",        o_split_path))
+    extend(sym("relative-path?"),    primitive1("relative-path?",    o_is_relative_path))
+    extend(sym("module-path?"),      primitive1("module-path?",      o_is_module_path))
+    extend(sym("build-module-path"), primitive2("build-module-path", o_build_module_path)) // todo: test
     extend(sym("variable?"),     primitive1("variable?",     o_is_variable))
     extend(sym("variable"),      primitive1("variable",      o_make_variable))
-    extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     extend(sym("variable-ref"),  primitive1("variable-ref",  o_variable_ref))
-    
-    // variable?, variable, variable-ref, variable-set!
+    extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     
     // handle?, fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
@@ -2851,12 +3011,26 @@ js_write(o_trie_lookup(t, bar))
 //js_write(o_hash_ref(h, sym("bar")))
 
 
-//js_display(format(kernel_eval(parse1(
-//    '(module->hash (quote "lib/rac/private/base/and-or.rac"))'
+
+// js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums))'
 //))))
 
-js_display(format(kernel_eval(parse1(
-    '(hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums))'
-))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(relative-path? "lib/rac/private/base/and-or.rac"))'))))
+
+
+
+//js_display(format(o_build_module_path(make_string("foo"),
+//                                      make_string("huh.rac")),
+//                  write_mode))
+
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash (quote "lib/rac/private/base/and-or.rac"))'))))
+
+
+
+
 
 

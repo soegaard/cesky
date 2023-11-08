@@ -1,6 +1,7 @@
 // CEK-interpreter in ES6 JavaScript
 
 // TODO
+//  [ ] Use uninterned JavaScript symbol for tag
 //  [ ] Add source location to tokens.
 //  [ ] Implement more primitives
 //  [ ] Port lib/
@@ -41,6 +42,7 @@ const string_input_port_tag  = ["string_input_port"]  // internal for now
 const string_output_port_tag = ["string_output_port"] // internal for now
 const continuation_tag       = ["continuation"]
 const hash_tag               = ["hash"]
+//const trie_tag               = ["trie"]
 const variable_tag           = ["variable"]
 
 const null_tag               = ["null"]       // These names are useful for debugging,
@@ -148,6 +150,7 @@ function o_string_to_uninterned_symbol(o) {
 // SYMBOLS
 
 const symbol_table = {}  // all interned symbols
+let   symbol_counter = 0
 
 function   is_symbol(o) { return              Array.isArray(o) && (tag(o) === symbol_tag)  }
 function o_is_symbol(o) { return make_boolean(Array.isArray(o) && (tag(o) === symbol_tag)) }
@@ -157,13 +160,14 @@ function sym(str) {
     return (is_symbol(interned) ? interned : make_symbol(str))
 }
 function make_symbol(str) {
-    let key = Symbol(str)            // used as keys in hash tables
-    let val = [symbol_tag, str, key]
+    let key = Symbol(str)            // used as keys in mutable hash tables
+    let val = [symbol_tag, str, key, symbol_counter++]
     symbol_table[str] = val
     return val
 }
 function symbol_string(o) { return o[1] }
 function symbol_key(o)    { return o[2] }
+function symbol_id(o)     { return o[3] }
 
 function make_uninterned_symbol(str) {
     let key = Symbol(str)            // used as keys in hash tables
@@ -439,14 +443,159 @@ function o_bitwise_not(o) {
     return make_number( ~ number_value(o) )
 }
 
+// TRIES (aka HASH TABLES)
+
+// The tries are symbol-keyed persistent maps.
+
+const TRIE_BFACTOR_BITS = 1
+const TRIE_BFACTOR      = (1<<TRIE_BFACTOR_BITS)
+const TRIE_BFACTOR_MASK = (TRIE_BFACTOR-1)
+
+function make_trie(count, key, val, next) {
+    return [hash_tag, count, key, val, next]
+    // next is an array of length TRIE_BFACTOR or o_undefined
+}
+function is_trie(o)    { return              Array.isArray(o) && (tag(o) === hash_tag)  }
+function o_is_trie(o)  { return make_boolean(Array.isArray(o) && (tag(o) === hash_tag)) }
+
+function trie_count(o) { return o[1] }
+function trie_key(o)   { return o[2] }
+function trie_value(o) { return o[3] }
+function trie_next(o)  { return o[4] }
+
+function increment_trie_count(o) { o[1] += + 1 }
+function set_trie_key(o,k)       { o[2] = k }
+function set_trie_value(o,v)     { o[3] = v }
+
+function make_empty_trie() {
+    let next = Array(TRIE_BFACTOR)
+    next.fill(o_undefined)
+    return make_trie(0, o_undefined, o_undefined, next)
+}
+function trie_lookup(trie, id) {
+    // id is an integer
+    while (id > 0) {
+        trie = trie_next(trie)[id & TRIE_BFACTOR_MASK]
+        if (trie === o_undefined)
+            return o_undefined
+        id = id >> TRIE_BFACTOR_BITS
+    }
+    return trie_value(trie)
+}
+function o_trie_lookup(t, sym) {
+    return trie_lookup(t, symbol_id(sym))
+}
+function trie_set(trie, id, key, val) {
+    let next = false
+    while (id > 0) {
+        next = trie_next(trie)[id & TRIE_BFACTOR_MASK]
+        if (next === o_undefined) {
+            next = make_empty_trie()
+            trie_next(t)[id & TRIE_BFACTOR_MASK] = next
+            trie = next
+        } else 
+            trie = next
+        id = id >> TRIE_BFACTOR_BITS
+    }
+    set_trie_key(trie, key)
+    set_trie_value(trie, val)
+}
+function o_trie_set(trie, sym, val) {
+    let old = o_trie_lookup(trie, sym)
+    if (old !== o_undefined) 
+        throw new Error("attempt to mutate trie")
+    trie_set(trie, symbol_id(sym), sym, val)
+    increment_trie_count(trie)
+    return trie
+}
+function trie_clone(trie) {
+    const count = trie_count(trie)
+    const key   = trie_key(trie)
+    const val   = trie_value(trie)
+    const next  = trie_next(trie)
+    return make_trie(count, key, val, next)
+}
+function trie_extend(trie, id, key, val, added_box) {
+    // added is an array with one element
+    let new_trie = false
+    if (trie=== o_undefined) {
+        new_trie = make_empty_trie()
+        trie = new_trie
+        added_box[0] = 1
+    } else 
+        new_trie = trie_clone(trie)
+
+    if (id>0) {
+        let i = id & TRIE_BFACTOR_MASK
+        trie_next(new_trie)[i] = trie_extend(trie_next(trie)[i],
+                                             id >> TRIE_BFACTOR_BITS,
+                                             key, val, added_box)
+        added_box[0] += 1
+    } else {
+        if (trie_value(new_trie) === o_undefined)
+            added_box[0] = 1
+        set_trie_key(new_trie, key)
+        set_trie_value(new_trie, val)
+    }
+    return new_trie
+}
+function o_trie_extend(trie, sym, val) {
+    let added_box = [0]
+    return trie_extend(trie, symbol_id(sym), sym, val, added_box)
+}
+
+//function make_empty_hash() { return make_empty_trie() }
+const o_empty_hash = make_empty_trie()
+
+function o_hash(args) {
+    let kvs = args
+    while (!(kvs === o_null)) {
+        if (!is_symbol(o_car(kvs)))
+            throw new Error( "hash: expected a list of interleaved symbols and values" )
+        if (o_cdr(kvs) === o_null)
+            throw new Error( "hash: missing value for the last key" )
+        kvs = o_cdr(o_cdr(kvs))
+    }
+    kvs = args
+    let ht = o_empty_hash
+    while (!(kvs === o_null)) {
+        ht = o_trie_extend(ht, o_car(kvs), o_car(o_cdr(kvs)))
+        kvs = o_cdr(o_cdr(kvs))  // TODO: use a check-less version of cdr 
+    }
+    return ht
+}
+function o_hash_ref(o, sym, defval) {
+    const who = "hash-ref"
+    check_hash(who, o)
+    check_symbol(who, sym)
+    let v = o_trie_lookup(o, sym)
+    if (v === o_undefined) {
+        if (defval === o_undefined) 
+            throw new Error(who + ": key is not present, key:" + format(key))
+        v = defval
+    }
+    return v
+}
+function o_hash_set(o, sym, val) {
+    const who = "hash-set"
+    check_hash(who, o)
+    check_symbol(who, sym)
+    return o_trie_extend(o, sym, val)
+}
+function is_hash(o) {
+    return is_trie(o)
+}
+function o_is_hash(o) {
+    return make_boolean(is_trie(o))
+}
 
 
-// HASH TABLES
+/*  Mutable Hashes
 
 //   Mutable hash tables with symbols as keys.
-function make_empty_hash() { return [hash_tag, {}] }
 function is_hash(o)        { return Array.isArray(o) && (tag(o) === hash_tag) }
 function hash_table(o)     { return o[1] }
+function make_empty_hash() { return [hash_tag, {}] }
 
 function o_is_hash(o)      { return make_boolean(is_hash(o)) }
 
@@ -498,7 +647,7 @@ function o_hash(args) {
 }
 
 
-
+*/
 
 // MODULES
 
@@ -533,7 +682,7 @@ function register_module(modpath, mod) {
     // js_write(modpath)
     const who = "register_module"
     // Register the module `mod` which hasn't been registered before.
-    if (!(tag(mod) === hash_tag))
+    if (!(tag(mod) === hash_tag)) 
         throw new Error(who+": module did not produce a hash table " + format(modpath))
     
     if ( (o_pending_modules == o_null) || (modpath != o_car(o_pending_modules)) )
@@ -838,8 +987,12 @@ function check_string(name, o) {
 }
 function check_symbol(name, o) {
     if (!is_symbol(o))
-        fail_expected1(name, "symbol", o) }
-
+        fail_expected1(name, "symbol", o)
+}
+function check_hash(name, o) {
+    if (!is_hash(o))
+        fail_expected1(name, "hash", o)
+}
 function check_number(name, o) {
     if (!is_number(o))
         fail_expected1(name, "number", o)
@@ -1502,6 +1655,7 @@ function is_atom (o) {
         || (t == primitive_tag)  
         || (t == continuation_tag)
         || (t == hash_tag)
+        // || (t == trie_tag)
         || (o === o_null)          
         || (o === o_void)           
         || (o === o_undefined)
@@ -1530,6 +1684,7 @@ function format_atom (o, mode) {
     else if (t == primitive_tag)      { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)   { return "#<continuation>" }
     else if (t == hash_tag)           { return js_write(o) ; "#<hash>" }        
+    // else if (t == trie_tag)           { return js_write(o) ; "#<trie>" }
     else if (o === o_null)            { return "()" }
     else if (o === o_void)            { return "#<void>" }
     else if (o === o_eof)             { return "#<eof>" }
@@ -2035,7 +2190,7 @@ function make_top_env(mode) {
     if (mode === env_mode)
         env = make_empty_env()
     else if (mode === hash_mode)
-        env = make_empty_hash()        
+        env = o_empty_hash        
     
     // extend env with elements
     let extend = false
@@ -2099,11 +2254,11 @@ function make_top_env(mode) {
     extend(sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
     extend(sym("string->uninterned-symbol"), primitive1("string->uninterned-symbol",
                                                         o_string_to_uninterned_symbol))
-    // mutable hashes instead of immutable hashes
+    // immutable hashes
     extend(sym("hash?"),        primitive1("hash?",        o_is_hash))
     extend(sym("hash"),         primitiven("hash",         o_hash, -1))
     extend(sym("hash-ref"),     primitive23("hash-ref",    o_hash_ref))
-    extend(sym("hash-set!"),    primitive3("hash-set!",    o_hash_set))
+    extend(sym("hash-set"),     primitive3("hash-set",     o_hash_set))
     // hash-remove
     // hash-keys
     // hash-count
@@ -2230,15 +2385,13 @@ let initial_env = make_top_env(env_mode)
 
 // Declare the kernel module
 
-let kernel_module_hash = make_empty_hash()
+let kernel_module_hash = o_empty_hash
 o_hash_set(kernel_module_hash, sym("read-and-eval"), o_top_ref(sym("read-and-eval")))
 o_pending_modules = o_cons(sym("rac/kernel"), o_pending_modules)
 register_module(sym("rac/kernel"), kernel_module_hash)
 
+o_library_path = "lib"
 
-//
-// TESTS
-//
 
 //
 // TESTS
@@ -2313,21 +2466,21 @@ function test_environments() {
 }
 
 function test_hashes() {
-    let h = make_empty_hash()
+    let h = o_empty_hash
     let foo = sym("foo")
     let bar = sym("bar")
-    o_hash_set(h, foo, 42)
+    h = o_hash_set(h, foo, 42)
     let t1 = o_hash_ref(h, foo) === 42
-    o_hash_set(h, foo, 43)
+    h = o_hash_set(h, foo, 43)
     let t2 = o_hash_ref(h, foo) === 43
-    o_hash_set(h, bar, 44)
+    h = o_hash_set(h, bar, 44)
     let t3 = o_hash_ref(h, foo) === 43 
     let t4 = o_hash_ref(h, bar) === 44
 
     let h2 = o_hash(o_cons(foo, o_cons(42, o_cons(bar, o_cons(43, o_null)))))
     let t5 = o_hash_ref(h2, foo) === 42
     let t6 = o_hash_ref(h2, bar) === 43
-    
+    // console.log([t1,t2,t3,t4,t5,t6])
     return t1 && t2 && t3 && t4 && t5 && t6
 }
 
@@ -2539,7 +2692,6 @@ let expr119 = parse1("(string-read \"1\")")
 
 */
 
-o_library_path = "lib"
 
 
 // js_display(format(o_kernel_eval(expr118)))
@@ -2673,11 +2825,38 @@ js_display("--------------")
 //    '(apply ~v (hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums)))'))))
 
 //js_display(format(kernel_eval(parse1(
+//    "(let ([x (variable 'y)]) (begin (variable-set! x 42) (variable-ref x)))"
+//))))
+
+/*
+let t = make_empty_trie()
+js_display("empty trie")
+js_write(t)
+let foo = sym("foo")
+let bar = sym("bar")
+// js_write(o_trie_lookup(t, sym("foo")))
+js_display("inserting foo=42")
+t = o_trie_extend(t, foo, 42)
+js_write(t)
+
+t = o_trie_extend(t, bar, 43)
+t = o_trie_extend(t, foo, 44)
+
+js_display("lookup foo and bar")
+js_write(o_trie_lookup(t, foo))
+js_write(o_trie_lookup(t, bar))
+*/
+
+//let h = o_hash(list(sym("foo"), 42, sym("bar"), 43))
+//js_write(o_hash_ref(h, sym("bar")))
+
+
+//js_display(format(kernel_eval(parse1(
 //    '(module->hash (quote "lib/rac/private/base/and-or.rac"))'
 //))))
 
 js_display(format(kernel_eval(parse1(
-    "(let ([x (variable 'y)]) (begin (variable-set! x 42) (variable-ref x)))"
+    '(hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums))'
 ))))
 
 

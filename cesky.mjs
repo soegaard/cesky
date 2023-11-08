@@ -1,5 +1,16 @@
 // CEK-interpreter in ES6 JavaScript
 
+// TODO
+//  [ ] Add source location to tokens.
+//  [ ] Implement more primitives
+//  [ ] Port lib/
+//  [ ] Command line arguments
+//  [ ] Produce single file from library files and cesky.mjs for the browser.
+//  [ ] Documentation
+//  [ ] Name: `rac` (aka a small racket), `cesky` ?
+//  [ ] Actual string ports?
+//  [ ] FFI for JavaScript
+
 // Running
 //   node cesky.mjs
 
@@ -30,6 +41,7 @@ const string_input_port_tag  = ["string_input_port"]  // internal for now
 const string_output_port_tag = ["string_output_port"] // internal for now
 const continuation_tag       = ["continuation"]
 const hash_tag               = ["hash"]
+const variable_tag           = ["variable"]
 
 const null_tag               = ["null"]       // These names are useful for debugging,
 const void_tag               = ["void"]       // although they could be made singletons.
@@ -191,6 +203,35 @@ const o_eof = [singleton_tag, "eof"]
 function is_eof(o)   { return o === o_eof }
 function o_is_eof(o) { return make_boolean(o === o_eof) }
 
+// VARIABLES
+
+function o_make_variable(sym) {
+    check_symbol("variable", sym)
+    return [variable_tag, sym, o_undefined]
+}
+function variable_name(o)        { return o[1] }
+function variable_value(o)       { return o[2] }
+function set_variable_value(o,v) { o[2]=v }
+
+function is_variable(o)   { return              Array.isArray(o) && (tag(o) === variable_tag)  }
+function o_is_variable(o) { return make_boolean(Array.isArray(o) && (tag(o) === variable_tag)) }
+
+function o_variable_set(o, val) {
+    if (!is_variable(o))
+        fail_expected1("variable-set!", "variable", o)
+    if (variable_value(o) !== o_undefined)
+        throw new Error("variable already has a value")
+    set_variable_value(o,val)
+    return o_void
+}
+function o_variable_ref(o) {
+    if (!is_variable(o))
+        fail_expected1("variable-ref", "variable", o)
+    let val = variable_value(o)
+    if (val === o_undefined) 
+        throw new Error("undefined: " + format(variable_name(o)))
+    return val
+}
 
 // NULL, PAIRS, LISTS
 
@@ -1488,7 +1529,7 @@ function format_atom (o, mode) {
     }
     else if (t == primitive_tag)      { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)   { return "#<continuation>" }
-    else if (t == hash_tag)           { return "#<hash>" }        
+    else if (t == hash_tag)           { return js_write(o) ; "#<hash>" }        
     else if (o === o_null)            { return "()" }
     else if (o === o_void)            { return "#<void>" }
     else if (o === o_eof)             { return "#<eof>" }
@@ -2009,6 +2050,7 @@ function make_top_env(mode) {
     //   https://docs.racket-lang.org/zuo/zuo-kernel.html#%28part._kernel-primitives%29
 
     extend(sym("pair?"),       primitive1("pair?",       o_is_pair))
+    extend(sym("null"),        o_null)
     extend(sym("null?"),       primitive1("null?",       o_is_null))
     extend(sym("list?"),       primitive1("list?",       o_is_list))
     extend(sym("cons"),        primitive2("cons",        o_cons))
@@ -2021,6 +2063,7 @@ function make_top_env(mode) {
     extend(sym("list-ref"),    primitive2("list-ref",    o_list_ref))
     extend(sym("list-set"),    primitive3("list-set",    o_list_set))
 
+    // integer?
     extend(sym("number?"),     primitive1("number?",     o_is_number))
     extend(sym("zero?"),       primitive1("zero?",       o_is_zero))
     extend(sym("+"),           primitive2("+",           o_plus))
@@ -2048,6 +2091,7 @@ function make_top_env(mode) {
     extend(sym("string=?"),       primitive2("string=?",       o_string_equal))
     extend(sym("string-ci=?"),    primitive2("string-ci=?",    o_string_ci_equal))
     extend(sym("string<?"),       primitive2("string<?",       o_string_lt))
+    // string-sha256
     extend(sym("string-split"),   primitive12("string-split",  o_string_split))
 
     extend(sym("symbol?"),        primitive1("symbol?",        o_is_symbol))
@@ -2055,37 +2099,61 @@ function make_top_env(mode) {
     extend(sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
     extend(sym("string->uninterned-symbol"), primitive1("string->uninterned-symbol",
                                                         o_string_to_uninterned_symbol))
-
+    // mutable hashes instead of immutable hashes
     extend(sym("hash?"),        primitive1("hash?",        o_is_hash))
     extend(sym("hash"),         primitiven("hash",         o_hash, -1))
     extend(sym("hash-ref"),     primitive23("hash-ref",    o_hash_ref))
     extend(sym("hash-set!"),    primitive3("hash-set!",    o_hash_set))
+    // hash-remove
+    // hash-keys
+    // hash-count
+    // hash-keys-subset?
 
     extend(sym("eq?"),          primitive2("eq?",          o_is_eq))
     extend(sym("not"),          primitive1("not",          o_not))
     extend(sym("void"),         primitiven("void",         o_void_f, -1))
-
+    
+    extend(sym("procedure?"),   primitive1("procedure?",   o_is_procedure))
+    extend(sym("apply"),        o_apply)
+    extend(sym("call/cc"),      o_callcc)
+    extend(sym("call/prompt"),  o_call_prompt)
+    
+    // opaque, opaque-ref
+    // path-string?, build-path, build-raw-path, split-path, relative-path?
     extend(sym("module-path?"), primitive1("module-path?", o_is_module_path))
+    // build-module-path
 
+    extend(sym("variable?"),     primitive1("variable?",     o_is_variable))
+    extend(sym("variable"),      primitive1("variable",      o_make_variable))
+    extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
+    extend(sym("variable-ref"),  primitive1("variable-ref",  o_variable_ref))
+    
+    // variable?, variable, variable-ref, variable-set!
+    
+    // handle?, fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
+    // eof, fd-terminal?, cleanable-file, cleanable-cancel
+    // stat, ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
+    // runtime-ev, current-time
+    // process, process-read, process-wait, string->shell, shell->strings
+    
+    extend(sym("string-read"), primitive123("string-read", o_string_read))
     extend(sym("~v"),           primitiven("~v",           o_tilde_v, -1))
     extend(sym("~a"),           primitiven("~a",           o_tilde_a, -1))          
     extend(sym("~s"),           primitiven("~s",           o_tilde_s, -1))
-
+    // alert
+    // error
+    // arity-error
+    // arg-error
+    
     extend(sym("top-ref"),      primitive1("top-ref",      o_top_ref))
     extend(sym("kernel-env"),   primitive0("kernel-env",   o_kernel_env))
     extend(sym("kernel-eval"),  o_kernel_eval) // special primitive
-
-    extend(sym("procedure?"),  primitive1("procedure?",   o_is_procedure))
-
-    extend(sym("apply"),       o_apply)
-    extend(sym("call/cc"),     o_callcc)
-    extend(sym("call/prompt"), o_call_prompt)
-
-    extend(sym("string-read"), primitive123("string-read", o_string_read))
-
-    // Singletons
-    extend(sym("null"),        o_null)
-
+    // module->hash (see below)
+    // dump-image-and-exit
+    // exit
+    // suspend-signal
+    // resume-signal
+    
     // Output
     extend(sym("js-write"),    primitive1("js-write", o_js_write))
     
@@ -2601,6 +2669,15 @@ js_display("--------------")
 // js_write(format(o_string_read(make_string("42 (43 44) 45"))))
 // js_write(format(parse1("42 (43 44) 45")))
 
+//js_display(format(kernel_eval(parse1(
+//    '(apply ~v (hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums)))'))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash (quote "lib/rac/private/base/and-or.rac"))'
+//))))
+
 js_display(format(kernel_eval(parse1(
-    '(apply ~v (hash-ref (module->hash (quote "lib/rac/hello.rac")) (quote datums)))'))))
+    "(let ([x (variable 'y)]) (begin (variable-set! x 42) (variable-ref x)))"
+))))
+
 

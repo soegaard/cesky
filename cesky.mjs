@@ -669,7 +669,7 @@ function o_is_module_path(o) {
             return o_false
         if (s.includes("//"))
             return o_false
-        return (/^[a-zA-Z0-9/+-]*$/.test(s)) ? o_true : o_false
+        return (/^[a-zA-Z0-9/_+-]*$/.test(s)) ? o_true : o_false
     } else if (is_string(o)) {
         let s = string_string(o)
         let n = s.length
@@ -706,6 +706,12 @@ function o_current_directory() {
 }
 
 function o_build_path_multi(who, paths, build_path2) {
+    js_display("o_build_path_multi")
+    js_display("who")
+    js_write(who)
+    js_display("paths")
+    js_write(paths)
+    
     // Checks that all paths (except perhaps the first)
     // are relative paths. Then folds the list using the
     // two argument version `build_path2`. 
@@ -764,15 +770,44 @@ function o_split_path(path) {
     let p = string_string(path)
     let d = dirname(p)
     let b = basename(p)
-    return o_cons( d ? make_string(d): o_false,  make_string(b) )
+    return o_cons( d ? make_string(d): o_false,
+                   make_string(b) )
 }
 
 function o_build_module_path(base_mod_path, rel_mod_path) {
+    js_display("build-module-path")
+    js_display("base")
+    js_write(base_mod_path)
+    js_display("rel")
+    js_write(rel_mod_path)
+    
     if (is_symbol(rel_mod_path))
         return rel_mod_path
-    // TODO: pass who
-    // TODO: this does not match zuo
-    return o_build_path(list(base_mod_path, rel_mod_path))
+    if (path_is_absolute(string_string(base_mod_path)))
+        return rel_mod_path
+    let rel_str = string_string(rel_mod_path)
+    if (is_symbol(base_mod_path)) {
+        let saw_slash = /[/]/.test(symbol_string(base_mod_path))
+        if (!saw_slash)
+            base_mod_path = symbol_string(base_mod_path) + "/main"
+        base_mod_path = (is_symbol(base_mod_path) ? symbol_string(base_mod_path) : base_mod_path)
+
+        TODO: If base_mod_path is a symbol and rel_mod_path ends in .rac,
+        then we need to remove .rac.
+
+        Note: see tests in tests/module-path.zuo
+        
+        return sym( base_mod_path + "/" + rel_str )
+    } else {
+        base_mod_path = car(o_split_path(base_mod_path))
+        js_display("o_build_module-path - split base-path")
+        js_write(base_mod_path)
+        js_display("--")
+        if (base_mod_path === o_false)
+            base_mod_path = make_string("./")
+        return make_string(build_path(string_string(base_mod_path),
+                                      rel_str))
+  }
 }
 
 
@@ -926,10 +961,12 @@ function module_path_equal(mp1, mp2) {
 }
 
 function check_module_path(who, mp) {
-    if (o_is_module_path(mp) == o_false)
+    js_display("check_module_path")
+    js_display("mp")
+    js_write(mp)
+    if (o_is_module_path(mp) === o_false)
         throw new Error(who + ": module path expected, got " + format(mp))
 }
-
 
 function build_path(base, rel) {
     let out = base + "/" + rel
@@ -937,6 +974,10 @@ function build_path(base, rel) {
 }
 
 function file_to_string(path) {
+    js_display("file_to_string")
+    js_display("path")
+    js_write(path)
+    
     path = (is_string(path) ? string_string(path) : path)
     
     let s = fs.readFileSync(path, "utf8")
@@ -956,8 +997,8 @@ function library_path_to_file_path(path) {
     let rel = o_tilde_a(list(o_symbol_to_string(path),
                              saw_slash ? make_string("") : make_string("/main"),
                              make_string(".rac")))
-    rel = string_string(rel)
-    return build_path(o_library_path, rel)
+    let rel_str = string_string(rel)
+    return build_path(o_library_path, rel_str)
 }
 
 // This is the implementation of the private primitive `o_module_hash_star`.
@@ -3022,12 +3063,19 @@ js_write(o_trie_lookup(t, bar))
 
 
 
-//js_display(format(o_build_module_path(make_string("foo"),
-//                                      make_string("huh.rac")),
-//                  write_mode))
 
-//js_display(format(kernel_eval(parse1(
-//    '(module->hash (quote "lib/rac/private/base/and-or.rac"))'))))
+js_display(format(kernel_eval(parse1(
+    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+
+//js_write(o_is_module_path(sym("rac/private/basebase-common/lib.rac")))
+
+//js_write(o_build_module_path(make_string("foo/base/"),
+//                             make_string("../huh.rac")))
+
+
+// js_write(o_split_path(make_string("foo/base/")))
+
+
 
 
 

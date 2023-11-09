@@ -1,5 +1,7 @@
 // CEK-interpreter in ES6 JavaScript
+
 // TODO
+//  [ ] fix bug in hash-count (or hash_extend)
 //  [ ] multiple arguments for +, -, * 
 
 
@@ -7,13 +9,14 @@
 //  [x] Use uninterned JavaScript symbol for tag
 //  [ ] Add source location to tokens.
 //  [ ] Implement more primitives
-//  [ ] Port lib/
+//  [/] Port lib/
 //  [ ] Command line arguments
 //  [ ] Produce single file from library files and cesky.mjs for the browser.
 //  [ ] Documentation
 //  [ ] Name: `rac` (aka a small racket), `cesky` ?
 //  [ ] Actual string ports?
 //  [ ] FFI for JavaScript
+
 // Running
 //   node cesky.mjs
 
@@ -504,7 +507,7 @@ function trie_set(trie, id, key, val) {
         next = trie_next(trie)[id & TRIE_BFACTOR_MASK]
         if (next === o_undefined) {
             next = make_empty_trie()
-            trie_next(t)[id & TRIE_BFACTOR_MASK] = next
+            trie_next(trie)[id & TRIE_BFACTOR_MASK] = next
             trie = next
         } else 
             trie = next
@@ -634,7 +637,7 @@ function trie_is_keys_subset(trie1_in, trie2_in) {
 }
 function o_hash(args) {
     let kvs = args
-    while (!(kvs === o_null)) {
+    while (kvs !== o_null) {
         if (!is_symbol(o_car(kvs)))
             throw new Error( "hash: expected a list of interleaved symbols and values" )
         if (o_cdr(kvs) === o_null)
@@ -642,8 +645,8 @@ function o_hash(args) {
         kvs = o_cdr(o_cdr(kvs))
     }
     kvs = args
-    let ht = o_empty_hash
-    while (!(kvs === o_null)) {
+    let ht = make_empty_trie()
+    while (kvs !== o_null) {
         ht = o_trie_extend(ht, car(kvs), car(cdr(kvs)))
         kvs = cdr(cdr(kvs))  
     }
@@ -3448,7 +3451,6 @@ t("(list (let ([k (call/prompt\
        (list 7 9))")
 //t("(list-fail (call/prompt 1 'tag) \"not a procedure\")")
 //t("(list-fail (call/prompt void 7) \"not a symbol\")")
-*/
 
 t("(list (continuation-prompt-available? 'tagx) #f)")
 
@@ -3487,13 +3489,54 @@ t("(list (call/prompt (lambda ()\
        '(#t #t))")
 //t("(list-fail (call/prompt apply 'tag)
 //            \"apply: wrong number of arguments: [no arguments]\n\")")
-/*
 */
 
-//t("(list (hash-count (hash))                             0)")
-//t("(list (hash-count (hash 'a 1 'a 2 'b 3))              2)")
-//t("(list (hash-count (hash-set (hash 'a 1 'b 3) 'c 3))   3)")
-//t("(list (hash-count (hash-remove (hash 'a 1 'b 3) 'b))  1)")
+// KERNEL
+
+/*
+t("(list (kernel-eval 1) 1)")
+t("(list (kernel-eval 'cons) cons)")
+t("(list (kernel-eval '(cons 1 2)) '(1 . 2))")
+t("(list (procedure? (kernel-eval '(lambda (x) x))) #t)")
+t("(list (procedure? (kernel-eval '(lambda (x x) x))) #t)")
+t("(list (procedure? (kernel-eval '(lambda (x . x) x))) #t)")
+t("(list (procedure? (kernel-eval '(lambda (x x) \"name\" x))) #t)")
+t("(list ((kernel-eval '(lambda (x x) x)) #f 2) 2)")
+t("(list ((kernel-eval '(lambda (x x . x) x)) #f 2 3 4) '(3 4))")
+t("(list (((kernel-eval '(lambda (lambda) (lambda x x))) 1) 2) '(2))")
+t("(list (kernel-eval '(quote cons)) 'cons)")
+t("(list (kernel-eval '(if #t 1 2)) 1)")
+t("(list (kernel-eval '(if 0 1 2)) 1)")
+t("(list (kernel-eval '(if #f 1 2)) 2)")
+t("(list (kernel-eval '(let ([x 1]) x)) 1)")
+t("(list (kernel-eval '(let ([x 1]) (let ([x 2]) x))) 2)")
+t("(list (kernel-eval '(let ([x 1]) (list (let ([x 2]) x) x))) '(2 1))")
+t("(list (kernel-eval '(begin 1)) 1)")
+t("(list (kernel-eval '(begin 1 2)) 2)")
+t("(list (kernel-eval '(begin 1 2 3 4)) 4)")
+*/
+
+// VARIABLE
+
+/*
+t("(list (variable? (variable 'alice)))")
+t("(list (not (variable? 'alice)))")
+t("(list (let ([a (variable 'alice)])\
+            (begin\
+              (variable-set! a 'home)\
+              (list (variable-ref a) (variable-ref a))))\
+         '(home home))")
+*/
+
+
+// HASHES
+
+t("(list (hash-count (hash))                             0)")
+t("(list (hash-count (hash 'a 1))                        1)")
+t("(list (hash-count (hash 'a 1 'b 2))                   2)")
+t("(list (hash-count (hash 'a 1 'a 2 'b 3))              2)")
+t("(list (hash-count (hash-set (hash 'a 1 'b 3) 'c 3))   3)")
+t("(list (hash-count (hash-remove (hash 'a 1 'b 3) 'b))  1)")
 
 
 //t("(hash 'a 1 'a 2 'b 3)")
@@ -3504,4 +3547,8 @@ t("(list (call/prompt (lambda ()\
 //t("(hash-count (hash-set (hash-set (hash) 'a 41) 'a 42))")
 //t("(hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43))")
 
+
+
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/private/base/and-or.rac")'))))
 

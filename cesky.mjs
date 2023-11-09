@@ -785,24 +785,27 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
         return rel_mod_path
     if (path_is_absolute(string_string(base_mod_path)))
         return rel_mod_path
-    let rel_str = string_string(rel_mod_path)
+    
     if (is_symbol(base_mod_path)) {
+        // remove .rac if present at the end
+        let rel_str = string_string(rel_mod_path)
+        let groups = /^(.*)[.]rac$/.exec(rel_str)
+        if (groups !== null)
+            rel_str = groups[1]
+        // maybe add /main to the base module path
         let saw_slash = /[/]/.test(symbol_string(base_mod_path))
         if (!saw_slash)
             base_mod_path = symbol_string(base_mod_path) + "/main"
         base_mod_path = (is_symbol(base_mod_path) ? symbol_string(base_mod_path) : base_mod_path)
-
-        TODO: If base_mod_path is a symbol and rel_mod_path ends in .rac,
-        then we need to remove .rac.
-
-        Note: see tests in tests/module-path.zuo
-        
-        return sym( base_mod_path + "/" + rel_str )
+        base_mod_path = car(o_split_path(make_string(base_mod_path)))
+        js_display("base_mod_path after split")
+        js_write(base_mod_path)
+        return sym( string_string(o_build_path2( o_string_to_symbol(base_mod_path), sym(rel_str) ) ))
     } else {
         base_mod_path = car(o_split_path(base_mod_path))
-        js_display("o_build_module-path - split base-path")
-        js_write(base_mod_path)
-        js_display("--")
+        //js_display("o_build_module-path - split base-path")
+        //js_write(base_mod_path)
+        //js_display("--")
         if (base_mod_path === o_false)
             base_mod_path = make_string("./")
         return make_string(build_path(string_string(base_mod_path),
@@ -961,9 +964,9 @@ function module_path_equal(mp1, mp2) {
 }
 
 function check_module_path(who, mp) {
-    js_display("check_module_path")
-    js_display("mp")
-    js_write(mp)
+    //js_display("check_module_path")
+    //js_display("mp")
+    //js_write(mp)
     if (o_is_module_path(mp) === o_false)
         throw new Error(who + ": module path expected, got " + format(mp))
 }
@@ -3061,19 +3064,17 @@ js_write(o_trie_lookup(t, bar))
 //js_display(format(kernel_eval(parse1(
 //    '(relative-path? "lib/rac/private/base/and-or.rac"))'))))
 
+//js_write(o_is_module_path(sym("rac/private/basebase-common/lib.rac")))
 
+// js_write(o_split_path(make_string("foo/base/")))
+
+//js_write(o_build_module_path(sym("foo/base/"),
+//                             make_string("huh.rac")))
 
 
 js_display(format(kernel_eval(parse1(
     '(module->hash "lib/rac/private/base/and-or.rac")'))))
 
-//js_write(o_is_module_path(sym("rac/private/basebase-common/lib.rac")))
-
-//js_write(o_build_module_path(make_string("foo/base/"),
-//                             make_string("../huh.rac")))
-
-
-// js_write(o_split_path(make_string("foo/base/")))
 
 
 

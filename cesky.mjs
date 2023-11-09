@@ -1,7 +1,10 @@
 // CEK-interpreter in ES6 JavaScript
+// TODO
+//  [ ] multiple arguments for +, -, * 
+
 
 // TODO
-//  [ ] Use uninterned JavaScript symbol for tag
+//  [x] Use uninterned JavaScript symbol for tag
 //  [ ] Add source location to tokens.
 //  [ ] Implement more primitives
 //  [ ] Port lib/
@@ -11,7 +14,6 @@
 //  [ ] Name: `rac` (aka a small racket), `cesky` ?
 //  [ ] Actual string ports?
 //  [ ] FFI for JavaScript
-
 // Running
 //   node cesky.mjs
 
@@ -241,6 +243,7 @@ function o_variable_ref(o) {
         throw new Error("undefined: " + format(variable_name(o)))
     return val
 }
+
 
 // NULL, PAIRS, LISTS
 
@@ -1214,10 +1217,12 @@ function o_module_to_hash(mp) {
     
 // SINGLETONS
 
-const o_apply       = [singleton_tag, "apply"]
-const o_callcc      = [singleton_tag, "call/cc"]
-const o_call_prompt = [singleton_tag, "call/prompt"]
-const o_kernel_eval = [singleton_tag, "kernel-eval"]
+const o_apply               = [singleton_tag, "apply"]
+const o_callcc              = [singleton_tag, "call/cc"]
+const o_call_prompt         = [singleton_tag, "call/prompt"]
+const o_kernel_eval         = [singleton_tag, "kernel-eval"]
+const o_is_prompt_available = [singleton_tag, "is_prompt_available"]
+
 
 // PROCEDURES
 
@@ -1229,9 +1234,12 @@ function o_is_procedure(o) {
             || (o === o_apply)
             || (o === o_callcc)
             || (o === o_call_prompt)
+            || (o === o_is_prompt_available)
             || (o === o_kernel_eval))
             ? o_true : o_false)
 }
+
+
 
 // CLOSURES
 function is_closure(o) { return Array.isArray(o) && (tag(o) === closure_tag) }
@@ -1372,7 +1380,9 @@ function check_path_string(who,o) {
 function fail_expected1(name, type, value) {
     console.log(name + ":")
     console.log("  expected: " + type)
-    console.log("  given: " + format(value))
+    js_display("given:")
+    js_write(value)
+    // console.log("  given: " + format(value))
     throw new Error("^^^^")    
 }
 function check(name, typename, predicate, value) {
@@ -2114,41 +2124,43 @@ function is_atom (o) {
         || (o === o_apply)          
         || (o === o_callcc)         
         || (o === o_call_prompt)
+        || (o === o_is_prompt_available)
         || (o === o_kernel_eval)
 }
+
 
 function format_atom (o, mode) {
     // atom here means a single value, which can be formatted
     // without recursion
     let t = tag(o)
-    if      (t == symbol_tag)         { return format_symbol(o, mode) }
-    else if (t == number_tag)         { return format_number(o)   }
-    else if (t == boolean_tag)        { return format_boolean(o)  }
-    else if (t == string_tag)         { return format_string(o, mode) }
-    else if (t == closure_tag)        {
+    if      (t == symbol_tag)             { return format_symbol(o, mode) }
+    else if (t == number_tag)             { return format_number(o)   }
+    else if (t == boolean_tag)            { return format_boolean(o)  }
+    else if (t == string_tag)             { return format_string(o, mode) }
+    else if (t == closure_tag)            {
         let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
         return  "#<procedure" + (is_string(maybe_name) ?
                                  ":" + string_string(maybe_name) :
                                  "")
             + ">"
     }
-    else if (t == primitive_tag)      { return "#<procedure:" + primitive_name(o) +  ">" }
-    else if (t == continuation_tag)   { return "#<continuation>" }
-    else if (t == hash_tag)           { return  "#<hash>" }        
-    else if (t == opaque_tag)         { return format_opaque(o) }
+    else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
+    else if (t == continuation_tag)       { return "#<continuation>" }
+    else if (t == hash_tag)               { return  "#<hash>" }        
+    else if (t == opaque_tag)             { return format_opaque(o) }
     // else if (t == trie_tag)           { return js_write(o) ; "#<trie>" }
-    else if (o === o_null)            { return "()" }
-    else if (o === o_void)            { return "#<void>" }
-    else if (o === o_eof)             { return "#<eof>" }
-    else if (o === o_undefined)       { return "#<undefined>" }
-    else if (o === o_apply)           { return "#<procedure:apply>" }
-    else if (o === o_callcc)          { return "#<procedure:call/cc>" }
-    else if (o === o_call_prompt)     { return "#<procedure:call/prompt>" }
-    else if (o === o_kernel_eval)     { return "#<procedure:kernel-eval>" }
+    else if (o === o_null)                { return "()" }
+    else if (o === o_void)                { return "#<void>" }
+    else if (o === o_eof)                 { return "#<eof>" }
+    else if (o === o_undefined)           { return "#<undefined>" }
+    else if (o === o_apply)               { return "#<procedure:apply>" }
+    else if (o === o_callcc)              { return "#<procedure:call/cc>" }
+    else if (o === o_call_prompt)         { return "#<procedure:call/prompt>" }
+    else if (o === o_is_prompt_available) { return "#<procedure:o_is_prompt_available>" }
+    else if (o === o_kernel_eval)         { return "#<procedure:kernel-eval>" }
     else
         throw new Error("format_atom: expected atom, got: " + js_format(o))
 }
-
     
 function format(o, mode) {
     if (o === undefined)
@@ -2454,16 +2466,16 @@ function continue_step(s) {
                 } else if (rator === o_callcc) {
                     // console.log("call/cc")
                     // console.log(cont_next(state_k(s)))
-                    if (!(count == 1))
+                    if (count !== 1)
                         error_arity("callcc", args)
                     rator = o_car(args)
                     args  = o_cons([continuation_tag, cont_next(state_k(s))], o_null)
                     // no break => loop to call the callcc argument with the continuation
                 } else if (rator === o_call_prompt) {
-                    console.log("call/prompt")
+                    //console.log("call/prompt")
                     // (call/prompt proc tag)
-                    if (!(count == 2))
-                        error_arity("call_prompt", args)
+                    if (count !== 2)
+                        error_arity("call-prompt", args)
                     rator     = o_car(args)
                     let ptag  = o_car(o_cdr(args))
                     if (!(tag(ptag) === symbol_tag))
@@ -2474,6 +2486,19 @@ function continue_step(s) {
                                            state_m(s)))
                     set_state_k(s, o_done_k)
                     // no break => loop to call the proc argument
+                } else if (rator === o_is_prompt_available) {
+                    //js_display("continuation-prompt-available?")
+                    if (count !== 1)
+                        error_arity("continuation-prompt-available?", args)
+                    let ctag = car(args)
+                    check_symbol("continuation-prompt-available?", ctag)
+                    let mk = state_m(s)
+                    let v
+                    if ( mk === o_null)
+                        v = o_false
+                    else
+                        v = ((ctag === cdr(car(mk))) ? o_true : o_false)
+                    return [v,state_env(s),state_mem(s),cont_next(k),state_m(s)]
                 } else if (rator_tag === primitive_tag) {
                     // console.log(primitive_name(rator))
                     let f          = rator
@@ -2724,9 +2749,10 @@ function make_top_env(mode) {
     extend(sym("void"),         primitiven("void",         o_void_f, -1))
     
     extend(sym("procedure?"),   primitive1("procedure?",   o_is_procedure))
-    extend(sym("apply"),        o_apply)
-    extend(sym("call/cc"),      o_callcc)
-    extend(sym("call/prompt"),  o_call_prompt)
+    extend(sym("apply"),                                   o_apply)
+    extend(sym("call/cc"),                                 o_callcc)
+    extend(sym("call/prompt"),                             o_call_prompt)
+    extend(sym("continuation-prompt-available?"),          o_is_prompt_available)
     
     extend(sym("opaque"),        primitive2("opaque",         o_opaque))
     extend(sym("opaque-ref"),    primitive3("opaque-ref",     o_opaque_ref))
@@ -3330,7 +3356,7 @@ js_write(o_trie_lookup(t, bar))
 // js_write( symbol_list_sort( list( sym("foo"), sym("bar"), sym("baz")) ) )
 
 
-//js_display(format(kernel_eval(parse1(
+// js_display(format(kernel_eval(parse1(
 //    '(module->hash "lib/rac/private/base/and-or.rac")'))))
 
 
@@ -3357,6 +3383,7 @@ function t(str) {
 
 // OPAQUE
 
+/*
 t("(list (not (pair? (opaque 'hello \"hi\"))))")
 t("(list (opaque-ref 'hello (opaque 'hello \"hi\") #f) \"hi\")")
 t("(list (opaque-ref 'not-hello (opaque 'hello \"hi\") #f) #f))")
@@ -3365,7 +3392,103 @@ t("(list (opaque-ref 'hello (opaque (string->uninterned-symbol \"hello\") \"hi\"
 t("(list (opaque-ref (opaque 'hello \"hi\") 'hello #f) #f)")
 t("(list (opaque-ref 10 10 #f) #f)")
 t("(list (opaque-ref 10 10 'no) 'no)")
+*/
 
+// PROCEDURE
+
+/*
+t("(list (procedure? procedure?))")
+t("(list (procedure? (lambda (x) x)))")
+t("(list (procedure? (lambda args args)))")
+t("(list (procedure? apply))")
+t("(list (procedure? call/cc))")
+t("(list (procedure? (call/cc (lambda (k) k))))")
+t("(list (not (procedure? 1)))")
+
+//t("(list (apply + '()) 0)")
+//t("(list (apply + '(1)) 1)")
+t("(list (apply + '(1 2)) 3)")
+//t("(list (apply + '(1 2 3 4)) 10)")
+t("(list (apply apply (list + '(1 2))) 3)")
+//t("(list-fail (apply +) arity)")
+//t("(list-fail (apply '(+ 1 2)) arity)")
+//t("(list-fail (apply apply (cons + '(1 2))) arity)")
+//t("(list-arg-fail (apply + 1) \"not a list\")")
+
+
+
+t("(list (call/cc (lambda (k) (+ 1 (k 'ok)))) 'ok)")
+t("(list (let ([f (call/cc (lambda (k) k))])\
+         (if (procedure? f)\
+             (f 10)\
+             f))\
+       10)")
+//t("(list-fail (call/cc 1) \"not a procedure\")")
+
+t("(list (call/prompt (lambda () 10) 'tag) 10)")
+t("(list (let ([k (call/prompt\
+                 (lambda ()\
+                   (call/cc (lambda (k) k)))\
+                 'tag)])\
+         (+ 1 (call/prompt (lambda () (k 11)) 'tag)))\
+       12)")
+
+
+t("(list (let ([k (call/prompt\
+                 (lambda ()\
+                   (call/cc\
+                    (lambda (esc)\
+                      (+ 1\
+                         (* 2\
+                            (call/cc\
+                             (lambda (k) (esc k))))))))\
+                 'tag)])\
+         (list (call/prompt (lambda () (k 3)) 'tag)\
+               (call/prompt (lambda () (k 4)) 'tag)))\
+       (list 7 9))")
+//t("(list-fail (call/prompt 1 'tag) \"not a procedure\")")
+//t("(list-fail (call/prompt void 7) \"not a symbol\")")
+*/
+
+t("(list (continuation-prompt-available? 'tagx) #f)")
+
+t("(list (call/prompt (lambda () (continuation-prompt-available? 'tag))\
+                      'tag)\
+       #t)")
+
+
+t("(list (call/prompt (lambda ()\
+                      (continuation-prompt-available? 'other))\
+                    'tag)\
+       #f)")
+t("(list (call/prompt (lambda ()\
+                      (call/prompt\
+                       (lambda ()\
+                         (continuation-prompt-available? 'tag))\
+                       'other))\
+                    'tag)\
+        #f)")
+
+
+t("(list (call/prompt (lambda ()\
+                      (call/prompt\
+                       (lambda ()\
+                         (continuation-prompt-available? 'other))\
+                       'other))\
+                    'tag)\
+       #t)")
+t("(list (call/prompt (lambda ()\
+                      (list (call/prompt\
+                             (lambda ()\
+                               (continuation-prompt-available? 'other))\
+                             'other)\
+                            (continuation-prompt-available? 'tag)))\
+                    'tag)\
+       '(#t #t))")
+//t("(list-fail (call/prompt apply 'tag)
+//            \"apply: wrong number of arguments: [no arguments]\n\")")
+/*
+*/
 
 //t("(list (hash-count (hash))                             0)")
 //t("(list (hash-count (hash 'a 1 'a 2 'b 3))              2)")

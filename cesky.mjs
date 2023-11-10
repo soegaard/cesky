@@ -663,7 +663,7 @@ function o_hash_ref(o, sym, defval) {
     let v = o_trie_lookup(o, sym)
     if (v === o_undefined) {
         if (defval === o_undefined) 
-            throw new Error(who + ": key is not present, key:" + format(key))
+            throw new Error(who + ": key is not present, key:" + format(sym))
         v = defval
     }
     return v
@@ -930,9 +930,9 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
     if (path_is_absolute(string_string(base_mod_path)))
         return rel_mod_path
     
+    let rel_str = string_string(rel_mod_path)
     if (is_symbol(base_mod_path)) {
         // remove .rac if present at the end
-        let rel_str = string_string(rel_mod_path)
         let groups = /^(.*)[.]rac$/.exec(rel_str)
         if (groups !== null)
             rel_str = groups[1]
@@ -958,58 +958,6 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
 }
 
 
-/*
-
-function o_build_module_path(base_mod_path, rel_mod_path) {
-  const who = "build-module-path";
-  int ups = 0, strip_ups
-  zuo_t *rel_str
-
-    check_module_path(who, rel_mod_path);
-  let saw_slash = /[/]/.test(symbol_string(path))
-  if (!zuo_is_module_path(base_mod_path, &saw_slash))
-    zuo_fail_arg(who, "module path", base_mod_path);
-
-  if (rel_mod_path->tag == zuo_symbol_tag)
-    return rel_mod_path;
-
-  /* When an absolute path is given, normalization is the caller's problem: * /
-  if (zuo_path_is_absolute(ZUO_STRING_PTR(rel_mod_path)))
-    return rel_mod_path;
-
-  strip_ups = (base_mod_path->tag == zuo_symbol_tag);
-
-  rel_str = zuo_parse_relative_module_path(who, rel_mod_path, &ups, strip_ups);
-
-  if (base_mod_path->tag == zuo_symbol_tag) {
-    zuo_t *mod_path = ((zuo_symbol_t *)base_mod_path)->str;
-    if (!saw_slash)
-      mod_path = zuo_tilde_a(zuo_cons(mod_path, zuo_cons(zuo_string("/main"), z.o_null)));
-
-    while (ups) {
-      zuo_t *l = zuo_split_path(mod_path);
-      mod_path = _zuo_car(l);
-      if (mod_path == z.o_false)
-        zuo_fail1w(who, "too many up elements", rel_mod_path);
-      ups--;
-    }
-
-    mod_path = zuo_tilde_a(zuo_cons(mod_path, zuo_cons(rel_str, z.o_null)));
-    mod_path = zuo_string_to_symbol(mod_path);
-
-    if (!zuo_is_module_path(mod_path, &saw_slash))
-      zuo_fail1w(who, "relative path is not valid in a symbolic module path", rel_mod_path);
-
-    return mod_path;
-  } else {
-    base_mod_path = _zuo_car(zuo_split_path(base_mod_path));
-    if (base_mod_path == z.o_false)
-      base_mod_path = zuo_string(".");
-    return zuo_build_path2(base_mod_path, rel_str);
-  }
-}
-
-*/
 
 // private primitive
 function register_module(modpath, mod) {
@@ -1350,7 +1298,7 @@ function fail_arg(who, what, obj) {
     else
         not_a = "not a "
     let msg = format( list(make_string(not_a), make_string(what)),
-                      zuo_display_mode)
+                      display_mode)
     fail1w(who, string_string(msg), obj)
 }
 function check_string(name, o) {
@@ -2787,7 +2735,7 @@ function make_top_env(mode) {
     extend(sym("error"),        primitiven("error",        o_error, -1))
     extend(sym("alert"),        primitiven("alert",        o_alert, -1))
     // arity-error
-    extend(sym("arg-error"),    primitiven("arg-error",    o_arg_error, -1))
+    extend(sym("arg-error"),    primitive3("arg-error",    o_arg_error))
     
     extend(sym("top-ref"),      primitive1("top-ref",      o_top_ref))
     extend(sym("kernel-env"),   primitive0("kernel-env",   o_kernel_env))
@@ -2955,7 +2903,7 @@ function test_environments() {
 }
 
 function test_hashes() {
-    let h = o_empty_hash
+    let h = make_empty_trie()
     let foo = sym("foo")
     let bar = sym("bar")
     h = o_hash_set(h, foo, 42)
@@ -2993,10 +2941,10 @@ console.log(test_null_and_pairs())
 console.log("Environments")
 console.log(test_environments())
 console.log("Hashes")
-console.log("...skipping")
-//console.log(test_hashes())
+console.log(test_hashes())
 console.log("String Output Ports")
-//console.log(test_string_output_ports())
+console.log(test_string_output_ports())
+//console.log("...skipping")
 
 
 /*
@@ -3547,6 +3495,13 @@ t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 
 */
 
 
-js_display(format(kernel_eval(parse1(
-    '(module->hash "lib/rac/private/base-hygienic/and-or.rac")'))))
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(begin (arg-error \'who "what" 44) 45)'))))
+
+
+js_write(getcwd())
+
 

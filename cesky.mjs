@@ -1,9 +1,12 @@
 // CEK-interpreter in ES6 JavaScript
 
-// TODO
+// TODO SHORT TERM
 //  [x] fix bug in hash-count (or hash_extend)
+//  [ ] track down the datum->syntax undefined error
+//      - [ ] test looper
+//      - [ ] test sticher
 //  [ ] multiple arguments for +, -, * 
-
+//  [ ] replace representation of environments with tries
 
 // TODO
 //  [x] Use uninterned JavaScript symbol for tag
@@ -2059,14 +2062,14 @@ function format_opaque(o) {
 
 function is_atom (o) {
     let t = tag(o)
-    return (t == symbol_tag)    
-        || (t == number_tag)    
-        || (t == boolean_tag)   
-        || (t == string_tag)    
-        || (t == closure_tag)   
-        || (t == primitive_tag)  
-        || (t == continuation_tag)
-        || (t == hash_tag)
+    return (t === symbol_tag)    
+        || (t === number_tag)    
+        || (t === boolean_tag)   
+        || (t === string_tag)    
+        || (t === closure_tag)   
+        || (t === primitive_tag)  
+        || (t === continuation_tag)
+        || (t === hash_tag)
         // || (t == trie_tag)
         || (o === o_null)          
         || (o === o_void)           
@@ -2191,6 +2194,18 @@ function lookup(env,sym) {
     return undefined
 }
 
+function format_env(env) {
+    let strs = []
+    let i = 0
+    let sym = Symbol("a symbol")
+    while (env.length !== 0) {
+        strs[i++] = symbol_string(env[0][0])
+        env = env[1]
+    }
+    return strs.sort().join(" ")
+}
+
+
 // TOP-LEVEL
 
 // Note: Should the top level environment use a hash instead?
@@ -2286,9 +2301,9 @@ function step( s ) {
                 if (v === undefined) {
                     js_display("---")
                     js_display("lookup")
-                    //js_display("env")
-                    //js_write(state_env(s))
-                    // js_write(e)
+                    js_display("env")
+                    js_display(format_env(state_env(s)))
+                    //js_write(e)
                     throw new Error("undefined: " + symbol_string(e))
                 }
             }
@@ -2297,14 +2312,14 @@ function step( s ) {
             let rator = o_car(e)
             if (rator === quote_symbol) {
                 v = o_car(o_cdr(e))
-            } else if (rator === define_symbol) {
+/*            } else if (rator === define_symbol) {
                 // (define id expr)
                 let id = o_car(o_cdr(e))
                 let e0 = o_car(o_cdr(o_cdr(e)))
                 e = e0
                 let new_k = [define_k, id, state_k(s), state_env(s)]
                 set_state_k(s,new_k)
-            } else if (rator === if_symbol) {
+*/            } else if (rator === if_symbol) {
                 let e0 = o_car(o_cdr(e))
                 let e1 = o_car(o_cdr(o_cdr(e)))
                 let e2 = o_car(o_cdr(o_cdr(o_cdr(e))))
@@ -2620,7 +2635,7 @@ function make_top_env(mode) {
     if (mode === env_mode)
         env = make_empty_env()
     else if (mode === hash_mode)
-        env = o_empty_hash        
+        env = make_empty_trie()
     
     // extend env with elements
     let extend = false
@@ -3502,6 +3517,9 @@ t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 
 //    '(begin (arg-error \'who "what" 44) 45)'))))
 
 
-js_write(getcwd())
+//js_write(getcwd())
+
+js_display(format(kernel_eval(parse1(
+    '(hash-ref (module->hash "lib/rac/private/looper.rac") \'datums)'))))
 
 

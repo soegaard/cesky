@@ -1,6 +1,7 @@
 // CEK-interpreter in ES6 JavaScript
 
 // TODO SHORT TERM
+//  [ ] fix o_error
 //  [x] fix bug in hash-count (or hash_extend)
 //  [ ] track down the datum->syntax undefined error
 //      - [ ] test looper
@@ -33,6 +34,8 @@ import * as path from 'node:path'    // for isAbsolute()
 import { cwd, stdin, stdout, stderr }  from 'node:process'
 
 
+// TODO: the last true turns on terminal colors,
+//       turn them off, when writing to a file
 function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
@@ -531,7 +534,7 @@ function trie_clone(trie) {
     const count = trie_count(trie)
     const key   = trie_key(trie)
     const val   = trie_value(trie)
-    const next  = trie_next(trie)
+    const next  = trie_next(trie).slice()
     return make_trie(count, key, val, next)
 }
 function trie_extend(trie, id, key, val, added_box) {
@@ -541,16 +544,20 @@ function trie_extend(trie, id, key, val, added_box) {
         new_trie = make_empty_trie()
         trie = new_trie
         added_box[0] = 1
-    } else 
+    } else {
+        // js_display("cloning, id=" + id)
         new_trie = trie_clone(trie)
+    }
 
     if (id>0) {
+        // js_display("id>0, id=" + id)
         let i = id & TRIE_BFACTOR_MASK
         trie_next(new_trie)[i] = trie_extend(trie_next(trie)[i],
                                              id >> TRIE_BFACTOR_BITS,
                                              key, val, added_box)
         add_to_trie_count(new_trie, added_box[0])
     } else {
+        // js_display("id=0")
         if (trie_value(new_trie) === o_undefined)
             added_box[0] = 1
         add_to_trie_count(new_trie, added_box[0])
@@ -663,14 +670,12 @@ function o_hash_ref(o, sym, defval) {
     const who = "hash-ref"
     check_hash(who, o)
     check_symbol(who, sym)
-    js_display(symbol_string(sym))
     let v = o_trie_lookup(o, sym)
     if (v === o_undefined) {
         if (defval === o_undefined) 
             throw new Error(who + ": key is not present, key:" + format(sym))
         v = defval
     }
-    js_display(v)
     return v
 }
 function o_hash_set(o, sym, val) {
@@ -985,9 +990,9 @@ function register_module(modpath, mod) {
 
 // private primitive
 function get_read_and_eval(lang, mod) {
-    // js_display("> o_get_read_and_eval")
-    // js_write(["lang", lang])
-    // js_write(["mod",  mod])    
+    js_display("> o_get_read_and_eval")
+    js_write(["lang", lang])
+    //js_write(["mod",  mod])    
     let proc = o_hash_ref(mod, sym("read-and-eval"), o_false)
     // js_write(["proc",  proc])    
     if (tag(proc) !== closure_tag)
@@ -1124,7 +1129,7 @@ function module_to_hash_star(mp) {
         if ( module_path_equal(o_car(a), mp) ) {
             js_display("module_to_hash_star, found: ")
             js_write(mp)
-            js_write(o_cdr(a))
+            // js_write(o_cdr(a))
             return o_cdr(a)
         }
         ms = o_cdr(ms)
@@ -1292,6 +1297,8 @@ function fprintf(file_handle, format_string, ...arg) {
 // ERRORS
 
 function fail(msg) {
+    js_display("fail")
+    js_write(msg)
     throw new Error(msg)
 }
 function show_err1w(who, str, obj) {
@@ -1432,6 +1439,7 @@ function falert(f, objs) {
 function o_error(objs) {
     // error_color()
     falert(stderr, objs)
+    js_write(objs)
     fail("")
     return o_undefined
 }
@@ -2209,7 +2217,7 @@ function lookup(env,sym) {
     return undefined
 }
 
-function format_env(env) {
+function env_to_set(env) {
     let strs = []
     let i = 0
     let sym = Symbol("a symbol")
@@ -2217,7 +2225,41 @@ function format_env(env) {
         strs[i++] = symbol_string(env[0][0])
         env = env[1]
     }
-    return strs.sort().join(" ")
+    return new Set(strs)
+}
+// Currently (November 2023) difference and isSubsetOf
+// are "exerimental technology" according to MDN. Sigh.
+function difference(setA, setB) {
+    const result = new Set(setA)
+    for (const b of setB) {
+        result.delete(b)
+    }
+    return result
+}
+function isSubsetOf(setA, setB) {
+    let result = true    
+    for (const a of setA) {
+        if (!setB.has(a)) {
+            result = false
+            break
+        }
+    }
+    return result
+}
+function format_env(env) {
+    let E  = env_to_set(env)
+    let KE = initial_env_set
+    if ( isSubsetOf(KE,E) ) {
+        // Kernel env is a subset of env
+        if ( isSubsetOf(E,KE) ) {
+            return "kernel env"
+        } else {
+            return "kernel env plus: \n"
+                +  Array.from(difference(E,KE)).sort().join(" ")
+        }
+    } else {
+        return Array.from(E).sort().join(" ")
+    }
 }
 
 
@@ -2303,13 +2345,10 @@ function inject(expression) {
 
 
 function step( s ) {    
-    js_display("step")
-    js_display(format(state_e(s)))
-    js_display("env")
-    if (state_env(s) === initial_env)
-        js_display("initial env")
-    else
-        js_display(format_env(state_env(s)))
+    //js_display("step")
+    //js_display(format(state_e(s)))
+    //js_display("env")
+    //js_display(format_env(state_env(s)))
     let e   = state_e(s)
     // let env = state_env(s)
     let v   = undefined
@@ -2325,7 +2364,7 @@ function step( s ) {
                     js_display("lookup")
                     js_display("env")
                     js_display(format_env(state_env(s)))
-                    //js_write(e)
+                    js_write(e)
                     throw new Error("undefined: " + symbol_string(e))
                 }
             }
@@ -2383,11 +2422,11 @@ function step( s ) {
 }
 
 function continue_step(s) {
-    js_display("continue_step")
+    // js_display("continue_step")
     let k = state_k(s)
     let t = cont_type(k)
     if (t === apply_k) {
-        js_display("apply_k")
+        // js_display("apply_k")
         let d = cont_data(k) // [reverse_vals,exprs]
         let rev_vals = d[0]
         let es = d[1]
@@ -2409,8 +2448,8 @@ function continue_step(s) {
             let rator = o_car(args)
             args = o_cdr(args)
             count--
-            js_display("rator")
-            console.log(rator)
+            //js_display("rator")
+            //console.log(rator)
             //js_write(rator)
             // js_display("env")
             // js_write(state_env(k))
@@ -2550,14 +2589,14 @@ function continue_step(s) {
             }
         }	
     } else if (t === if_k) {
-        js_display("if_k")
+        // js_display("if_k")
         let d     = cont_data(k)
         let e     = ( state_v(s) == o_false) ? d[1] : d[0]
         let new_k = cont_next(k)
         let env   = cont_env(k)
         return [e,env,state_mem(s),new_k,state_m(s)]
     } else if (t === begin_k) {
-        js_display("begin_k")
+        // js_display("begin_k")
         let d     = cont_data(k)
         let e     = o_car(d)
         let next  = cont_next(k)
@@ -2565,7 +2604,7 @@ function continue_step(s) {
         let env   = cont_env(k)
         return [e,env,state_mem(s),new_k,state_m(s)]
     } else if (t === let_k) {
-        js_display("let_k")
+        // js_display("let_k")
         let v    = state_v(s)
         let d    = cont_data(k) 
         let x    = d[0]
@@ -2637,7 +2676,7 @@ function primitive23(name, proc)      { return register_primitive(name, proc, di
 function primitiven(name, proc, mask) { return register_primitive(name, proc, dispatchn,   mask)}
 // mask  1+2 = 1 or 2 arguments
 // mask  1   exactly 1 argument
-// maske 0   no arguments
+// mask  0   no arguments
 // mask -1 = any number
 // mask -2 = 1 or more
 
@@ -2667,7 +2706,7 @@ function make_top_env(mode) {
     if (mode === env_mode)
         extend = (name,val) => env = extend_env(env, name, val)
     else if (mode === hash_mode)
-        extend = (name,val) => o_hash_set(env, name, val)
+        extend = (name,val) => env = o_hash_set(env, name, val)
     else
         extend = (name,val) => extend_top_level(symbol_key(name), val)
 
@@ -2858,13 +2897,16 @@ function make_top_env(mode) {
     return env
 }
 
-let o_top_env   = make_top_env(top_mode)  // inserts directly into top_level
-let initial_env = make_top_env(env_mode)
+let o_top_env       = make_top_env(top_mode)  // inserts directly into top_level
+o_top_env = top_level
+let initial_env     = make_top_env(env_mode)
+let initial_env_set = env_to_set(initial_env)
+
 
 // Declare the kernel module
 
 let kernel_module_hash = make_empty_trie() 
-o_hash_set(kernel_module_hash, sym("read-and-eval"), o_top_ref(sym("read-and-eval")))
+kernel_module_hash = o_hash_set(kernel_module_hash, sym("read-and-eval"), o_top_ref(sym("read-and-eval")))
 o_pending_modules = o_cons(sym("rac/kernel"), o_pending_modules)
 register_module(sym("rac/kernel"), kernel_module_hash)
 
@@ -3520,7 +3562,6 @@ t("(list (let ([a (variable 'alice)])\
 
 
 // HASHES
-
 /*
 t("(list (hash-count (hash))                             0)")
 t("(list (hash-count (hash 'a 1))                        1)")
@@ -3535,9 +3576,31 @@ t("(list (hash-count (hash-set (hash-set (hash) 'a 41) 'a 42)) 1)")
 t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 1)")
 */
 
+//t("(list (let ([h1 (hash-set (hash) (quote a) 41)])\
+//           (let ([h2 (hash-set h1 (quote a) 42)])\
+//             (list (hash-ref h1 'a) (hash-ref h2 'a))))\
+//    (list 41 42))")
 
-//js_display(format(kernel_eval(parse1(
-//    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+
+// SYMBOLS
+//t("(list (eq? 'a 'a) #t)")
+//t("(list (eq?  1  1) #f)")
+//t("(list (kernel-eval '(let ([a 3]) ((lambda (a) a) 5))) 5)")
+
+// t("(list (kernel-eval (let ([a 3]) '(begin ((lambda (a) 4) 5) a))) 3)")
+// t("(list (let ([a 3]) (kernel-eval '(begin ((lambda (a) 4) 5) a))) 3)")
+// t("(list (kernel-eval '(let ([a 3]) (begin ((lambda (a) 4) 5) a))) 3)")
+
+// t("(list (=    1  1) #t)")
+
+
+//js_write(o_modules)
+
+js_display(format(kernel_eval(parse1(
+    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+
+//js_write(o_top_env)
+
 
 //js_display(format(kernel_eval(parse1(
 //    '(begin (arg-error \'who "what" 44) 45)'))))
@@ -3549,12 +3612,39 @@ t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 
 //    '(module->hash "lib/rac/private/stitcher.rac")'))))
 
 
-js_display(format(kernel_eval(parse1(
-    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
 
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (module->hash "test-kernel.rac") \'result)'))))
 
 
+//js_write(initial_env_set)
 
 
+/*
+
+let T = make_empty_trie()
+js_display("T")
+js_write(T)
+let s = sym("a")
+s[3] = 4  // set the id to 3
+let id = symbol_id(s)
+let key = symbol_key(s)
+let box = [0]
+let T1 = trie_extend(T, id, key, 41, box) 
+// (trie, id, key, val, added_box)
+js_display("T1")
+js_write(T1)
+js_write(box)
+let T2 = trie_extend(T, id, key, 42, box) 
+js_display("T2")
+js_write(T2)
+js_write(box)
+js_display("T1 again")
+js_write(T1)
+*/
+
+
+
+// js_write(o_kernel_env())

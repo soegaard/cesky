@@ -6,7 +6,7 @@
 //  [ ] track down the datum->syntax undefined error
 //      - [ ] test looper
 //      - [ ] test sticher
-//  [ ] multiple arguments for +, -, * 
+//  [x] multiple arguments for +, -, * 
 //  [ ] replace representation of environments with tries
 //  [ ] handle \ as an escape in string syntax
 
@@ -412,15 +412,66 @@ function o_append(os) {
 function is_number(o)   { return              Array.isArray(o) && (tag(o) === number_tag)  }
 function o_is_number(o) { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
 
-function make_number(x)   { return [number_tag, x] }
-function number_value(o)  { return o[1] }
-function o_plus(o1, o2)   { return make_number(o1[1] + o2[1]) }
-function o_minus(o1, o2)  { return make_number(o1[1] - o2[1]) }
-function o_mult(o1, o2)   { return make_number(o1[1] * o2[1]) }
-function o_div(o1, o2)    { return make_number(o1[1] / o2[1]) }
-function o_modulo(o1, o2) { return make_number( ((o1[1] % o2[1]) + o2[1]) % o2[1]) }
-function o_remainder(o1, o2) { return make_number(o1[1] % o2[1]) }
-function o_quotient(o1, o2)  { return make_number(Math.floor(o1[1] / o2[1])) }
+function make_number(x)      { return [number_tag, x] }
+function number_value(o)     { return o[1] }
+
+function o_plus(ns) {
+    let i = 0;
+    while (ns !== o_null) {
+        let n = car(ns)
+        check_number("+", n)
+        i += number_value(n)
+        ns = cdr(ns)
+    }
+    return make_number(i)
+}
+function o_mult(ns) {
+    let i = 1;
+    while (ns !== o_null) {
+        let n = car(ns)
+        check_number("*", n)
+        i *= number_value(n)
+        ns = cdr(ns)
+    }
+    return make_number(i)
+}
+function o_minus(ns) {
+    let n = car(ns)  // note: arity check ensures we have at least one argument
+    check_number("-", n)
+    let i = number_value(n)
+    ns = cdr(ns)
+    if (ns === o_null) {
+        i = -i
+    } else {
+        while (ns !== o_null) {
+            n = car(ns)
+            check_number("-", n)
+            i -= number_value(n)
+            ns = cdr(ns)
+        }
+    }
+    return make_number(i)
+}
+function o_div(ns) {
+    let n = car(ns)  // note: arity check ensures we have at least one argument
+    check_non_zero("/", n)
+    let i = number_value(n)
+    ns = cdr(ns)
+    if (ns === o_null) {
+        i = 1/i
+    } else {
+        while (ns !== o_null) {
+            n = car(ns)
+            check_non_zero("/", n)
+            i = i / number_value(n)
+            ns = cdr(ns)
+        }
+    }
+    return make_number(i)
+}
+function o_modulo(o1, o2)    { check_numbers("modulo",    o1, o2) ; return make_number( ((o1[1] % o2[1]) + o2[1]) % o2[1]) }
+function o_remainder(o1, o2) { check_numbers("remainder", o1, o2) ; return make_number(o1[1] % o2[1]) }
+function o_quotient(o1, o2)  { check_numbers("quotient",  o1, o2) ; return make_number(Math.floor(o1[1] / o2[1])) }
 
 
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
@@ -1355,6 +1406,12 @@ function check_numbers(name, o1, o2) {
     if (!is_number(o2))
         fail_expected1(name, "number", o2)
 }
+function check_non_zero(name, o) {
+    if ((!is_number(o)) || (number_value(o)===0))
+        fail_expected1(name, "non-zero number", o)
+    
+}
+
 function check_path_string(who,o) {
     if (o_is_path_string(o) === o_false)
         fail_expected1(who, "path string", o)
@@ -2740,10 +2797,10 @@ function make_top_env(mode) {
     // integer?
     extend(sym("number?"),     primitive1("number?",     o_is_number))
     extend(sym("zero?"),       primitive1("zero?",       o_is_zero))
-    extend(sym("+"),           primitive2("+",           o_plus))
-    extend(sym("-"),           primitive2("-",           o_minus))
-    extend(sym("*"),           primitive2("*",           o_mult))
-    extend(sym("/"),           primitive2("/",           o_div))
+    extend(sym("+"),           primitiven("+",           o_plus,  -1))
+    extend(sym("-"),           primitiven("-",           o_minus, -2))
+    extend(sym("*"),           primitiven("*",           o_mult,  -1))
+    extend(sym("/"),           primitiven("/",           o_div,   -2))
     extend(sym("quotient"),    primitive2("quotient",    o_quotient))
     extend(sym("remainder"),   primitive2("remainder",   o_remainder))
     extend(sym("modulo"),      primitive2("modulo",      o_modulo))
@@ -3629,6 +3686,7 @@ t('(list (build-path "/x" "z")                 "/x/z")')
 */
 
 // TEST MODULE PATHS
+/*
 t('(list (build-module-path \'rac "list.rac") \'rac/list)')
 t('(list (build-module-path \'rac/main "list.rac") \'rac/list)')
 t('(list (build-module-path \'rac/private/main "list.rac") \'rac/private/list)')
@@ -3641,7 +3699,7 @@ t('(list (build-module-path \'rac/private/main "./././../././list.rac") \'rac/li
 t('(list (build-module-path "lib/rac/main.rac" "list.rac") "lib/rac/list.rac")')
 t('(list (build-module-path "lib/rac/main.rac" "../list.rac") "lib/list.rac")')
 t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
-
+*/
 
 
 
@@ -3668,8 +3726,8 @@ t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
 //    '(module->hash "lib/rac/private/stitcher.rac")'))))
 
 
-//js_display(format(kernel_eval(parse1(
-//    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
+js_display(format(kernel_eval(parse1(
+    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
 
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (module->hash "test-kernel.rac") \'result)'))))

@@ -8,6 +8,7 @@
 //      - [ ] test sticher
 //  [ ] multiple arguments for +, -, * 
 //  [ ] replace representation of environments with tries
+//  [ ] handle \ as an escape in string syntax
 
 // TODO
 //  [x] Use uninterned JavaScript symbol for tag
@@ -938,11 +939,11 @@ function o_split_path(path) {
 }
 
 function o_build_module_path(base_mod_path, rel_mod_path) {
-    js_display("build-module-path")
-    js_display("base")
-    js_write(base_mod_path)
-    js_display("rel")
-    js_write(rel_mod_path)
+    //js_display("build-module-path")
+    //js_display("base")
+    //js_write(base_mod_path)
+    //js_display("rel")
+    //js_write(rel_mod_path)
     
     if (is_symbol(rel_mod_path))
         return rel_mod_path
@@ -961,8 +962,8 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
             base_mod_path = symbol_string(base_mod_path) + "/main"
         base_mod_path = (is_symbol(base_mod_path) ? symbol_string(base_mod_path) : base_mod_path)
         base_mod_path = car(o_split_path(make_string(base_mod_path)))
-        js_display("base_mod_path after split")
-        js_write(base_mod_path)
+        //js_display("base_mod_path after split")
+        //js_write(base_mod_path)
         return sym( string_string(o_build_path2( o_string_to_symbol(base_mod_path), sym(rel_str) ) ))
     } else {
         base_mod_path = car(o_split_path(base_mod_path))
@@ -971,8 +972,8 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
         //js_display("--")
         if (base_mod_path === o_false)
             base_mod_path = make_string("./")
-        return make_string(build_path(string_string(base_mod_path),
-                                      rel_str))
+        // return make_string(build_path(string_string(base_mod_path), rel_str))
+        return o_build_path(list(base_mod_path, make_string(rel_str)))
   }
 }
 
@@ -980,9 +981,9 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
 
 // private primitive
 function register_module(modpath, mod) {
-    js_display("> register-module")
-    js_display("> register module: modpath is")
-    js_write(modpath)
+    js_display("> register-module: " +  format(modpath))
+    //js_display("> register module: modpath is")
+    //js_write(modpath)
     const who = "register_module"
     // Register the module `mod` which hasn't been registered before.
     if (tag(mod) !== hash_tag)
@@ -1083,19 +1084,19 @@ function check_module_path(who, mp) {
 }
 
 function build_path(base, rel) {
-    js_display("build_path")
-    js_display("base")
-    js_write(base)
-    js_display("rel")
-    js_write(rel)    
+    // js_display("build_path")
+    //js_display("base")
+    //js_write(base)
+    //js_display("rel")
+    //js_write(rel)    
     let out = base + "/" + rel
     return out
 }
 
 function file_to_string(path) {
-    js_display("file_to_string")
-    js_display("path")
-    js_write(path)
+    //js_display("file_to_string")
+    //js_display("path")
+    //js_write(path)
     
     path = (is_string(path) ? string_string(path) : path)
     
@@ -1123,7 +1124,7 @@ function library_path_to_file_path(path) {
 // This is the implementation of the private primitive `o_module_hash_star`.
 
 function module_to_hash_star(mp) {
-    js_display(["module_to_hash_star", mp])
+    js_display(["module_to_hash_star", format(mp)])
 
     // Does the work for module->hash in the case,
     // where the module is already declared.
@@ -1136,8 +1137,8 @@ function module_to_hash_star(mp) {
     while (! (ms === o_null)) {
         let a = o_car(ms)
         if ( module_path_equal(o_car(a), mp) ) {
-            js_display("module_to_hash_star, found: ")
-            js_write(mp)
+            js_display("module_to_hash_star, found: " + format(mp))
+            // js_write(mp)
             // js_write(o_cdr(a))
             return o_cdr(a)
         }
@@ -3603,9 +3604,8 @@ t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 
 // t("(list (=    1  1) #t)")
 
 
-// PATHS
+// TEST PATHS
 /*
-
 t('(list (build-raw-path "." "y")              "./y")')
 t('(list (build-raw-path "x" ".")              "x/.")')
 t('(list (build-raw-path "x" "..")             "x/..")')
@@ -3626,8 +3626,24 @@ t('(list (build-raw-path "x" "y/z")            "x/y/z")')
 t('(list (build-path "x/y" "z")                "x/y/z")')
 t('(list (build-path "x/y/" "z")               "x/y/z")')
 t('(list (build-path "/x" "z")                 "/x/z")')
-
 */
+
+// TEST MODULE PATHS
+t('(list (build-module-path \'rac "list.rac") \'rac/list)')
+t('(list (build-module-path \'rac/main "list.rac") \'rac/list)')
+t('(list (build-module-path \'rac/private/main "list.rac") \'rac/private/list)')
+t('(list (build-module-path \'rac "helper/list.rac") \'rac/helper/list)')
+t('(list (build-module-path \'rac/main "helper/list.rac") \'rac/helper/list)')
+t('(list (build-module-path \'rac/private/main "helper/list.rac") \'rac/private/helper/list)')
+t('(list (build-module-path \'rac/private/main "../list.rac") \'rac/list)')
+t('(list (build-module-path \'rac/private/main "./list.rac") \'rac/private/list)')
+t('(list (build-module-path \'rac/private/main "./././../././list.rac") \'rac/list)')
+t('(list (build-module-path "lib/rac/main.rac" "list.rac") "lib/rac/list.rac")')
+t('(list (build-module-path "lib/rac/main.rac" "../list.rac") "lib/list.rac")')
+t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
+
+
+
 
 
 // TODO: Fix parser

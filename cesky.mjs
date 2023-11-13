@@ -860,11 +860,11 @@ function o_current_directory() {
 }
 
 function o_build_path_multi(who, paths, build_path2) {
-    js_display("o_build_path_multi")
-    js_display("who")
-    js_write(who)
-    js_display("paths")
-    js_write(paths)
+    //js_display("o_build_path_multi")
+    //js_display("who")
+    //js_write(who)
+    //js_display("paths")
+    //js_write(paths)
     
     // Checks that all paths (except perhaps the first)
     // are relative paths. Then folds the list using the
@@ -901,13 +901,22 @@ function o_normalize_input_path(path) {
     return o_build_path2(make_string("."), path)
 }
 function o_build_raw_path2(pre, post) {
-    // TODO: currently this is the same as o_build_path2
-    // path.join normalizes and returns "." to signal current directory
-    return make_string( path.join( string_string(pre), string_string(post) ) )
+    // if pre doesn't end in a separator, we add one
+    let pre_str  = string_string(pre)
+    let post_str = string_string(post)
+    let sep = (pre_str.substr(-1) === "/") ? "" : "/"
+    return make_string( pre_str + sep + post_str )
 }
 function o_build_path2(pre, post) {
     // path.join normalizes and returns "." to signal current directory
-    return make_string( path.join( string_string(pre), string_string(post) ) )
+    let pre_str    = string_string(pre)
+    let post_str   = string_string(post)
+    let joined     = path.join( pre_str, post_str )
+    let last       = joined.substr(-1)
+    let last_post  = post_str.substr(-1)
+    let last2_post = post_str.substr(-2)
+    let end_sep    = ((last === "/") || (last === "."))  ?  ""  :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
+    return make_string( joined + end_sep )
 }
 
 
@@ -3594,10 +3603,41 @@ t("(list (hash-count (hash-set (hash-set (hash-set (hash) 'a 41) 'a 42) 'a 43)) 
 // t("(list (=    1  1) #t)")
 
 
+// PATHS
+/*
+
+t('(list (build-raw-path "." "y")              "./y")')
+t('(list (build-raw-path "x" ".")              "x/.")')
+t('(list (build-raw-path "x" "..")             "x/..")')
+t('(list (build-raw-path "x/y/z/./.." "..")    "x/y/z/./../..")')
+
+t('(list (build-path "." "y")                  "y")')
+t('(list (build-path ".." "y")                 "../y")')
+t('(list (build-path "x" ".")                  "x")')
+t('(list (build-path "x" "..")                 ".")')
+t('(list (build-path "x/y/z/./.." "..")        "x/")')
+t('(list (build-path "x/y/./.." "..")          ".")')
+t('(list (build-path "x/y/./.." "../../..")    "../..")')
+t('(list (build-path "x/y/./.." "../q/../..")  "..")')
+t('(list (build-path "x//" "y")                "x//y")')
+t('(list (build-path "x/" "y") "               x/y")')
+t('(list (build-path "x" "y/z")                "x/y/z")')
+t('(list (build-raw-path "x" "y/z")            "x/y/z")')
+t('(list (build-path "x/y" "z")                "x/y/z")')
+t('(list (build-path "x/y/" "z")               "x/y/z")')
+t('(list (build-path "/x" "z")                 "/x/z")')
+
+*/
+
+
+// TODO: Fix parser
+//t('(list (build-path "x\\" "y")                "x\\/y")')
+
+
 //js_write(o_modules)
 
-js_display(format(kernel_eval(parse1(
-    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/private/base/and-or.rac")'))))
 
 //js_write(o_top_env)
 

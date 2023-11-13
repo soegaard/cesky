@@ -250,7 +250,7 @@ function o_variable_ref(o) {
         fail_expected1("variable-ref", "variable", o)
     let val = variable_value(o)
     if (val === o_undefined) 
-        throw new Error("undefined: " + format(variable_name(o)))
+        throw new Error("variable uninitialized: " + format(variable_name(o)))
     return val
 }
 
@@ -678,13 +678,13 @@ function trie_is_keys_subset(trie1_in, trie2_in) {
     if (trie1_in === trie2_in)
         return true
     else if (trie1_in === o_undefined)
-        return false
+        return true
     else if (trie2_in === o_undefined)
         return false
     else {
         let trie1 = trie1_in;
         let trie2 = trie2_in;
-        let i
+        let i =0
 
         if (trie_count(trie1) > trie_count(trie2))
             return false
@@ -719,13 +719,16 @@ function o_hash_count(ht) {
     return make_number(trie_count(ht))
 }
 function o_hash_ref(o, sym, defval) {
+    if (defval === undefined)
+        defval = o_undefined 
     const who = "hash-ref"
     check_hash(who, o)
     check_symbol(who, sym)
     let v = o_trie_lookup(o, sym)
     if (v === o_undefined) {
-        if (defval === o_undefined) 
-            throw new Error(who + ": key is not present, key:" + format(sym))
+        if (defval === o_undefined) {
+            throw new Error(who + ": key is not present, key:" + format_symbol(sym))
+        }
         v = defval
     }
     return v
@@ -2189,7 +2192,8 @@ function format_atom (o, mode) {
     }
     else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)       { return "#<continuation>" }
-    else if (t == hash_tag)               { js_write(o_hash_keys(o)) ;
+    else if (t == hash_tag)               { js_write(format(o_hash_keys(o))) ;
+                                            //js_write(o) ;
                                             return "#<hash>" }        
     else if (t == opaque_tag)             { return format_opaque(o) }
     // else if (t == trie_tag)           { return  "#<trie>" }
@@ -2543,7 +2547,7 @@ function continue_step(s) {
                         error_arg("apply", "list", args)                        
                     // no break => we loop and handle the new rator and args
                 } else if (rator === o_kernel_eval) {
-                    //js_display("KERNEL EVAL")
+                    js_display("KERNEL EVAL")
                     //js_display("env before")
                     //js_display("args")
                     //js_display(format(args))
@@ -3701,6 +3705,9 @@ t('(list (build-module-path "lib/rac/main.rac" "../list.rac") "lib/list.rac")')
 t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
 */
 
+/*
+t('(let ([x (variable (quote foo))]) (begin (variable-set! x 32) (variable-ref x)) )')
+*/
 
 
 
@@ -3711,7 +3718,7 @@ t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
 //js_write(o_modules)
 
 //js_display(format(kernel_eval(parse1(
-//    '(module->hash "lib/rac/private/base/and-or.rac")'))))
+//    '(module->hash "lib/rac/private/base-hygienic/and-or.rac")'))))
 
 //js_write(o_top_env)
 
@@ -3726,8 +3733,14 @@ t('(list (build-module-path "lib.rac" "list.rac") "list.rac")')
 //    '(module->hash "lib/rac/private/stitcher.rac")'))))
 
 
-js_display(format(kernel_eval(parse1(
-    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/private/base/main.rac")'))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash "using-test-lang.rac") \'result)'))))
 
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (module->hash "test-kernel.rac") \'result)'))))
@@ -3762,3 +3775,11 @@ js_write(T1)
 
 
 // js_write(o_kernel_env())
+
+
+t("(hash 'a 1)")
+t("(hash 'a 2 'b 3)")
+t("(hash-count (hash 'a 1))")
+t("(hash-count (hash 'a 2 'b 3))")
+
+t("(hash-keys-subset? (hash 'a 1) (hash 'a 2 'b 3))")

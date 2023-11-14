@@ -97,11 +97,11 @@ function o_string(os) {
 function o_substring(o,start,end) {
     let who = "substring"
     check_string(who,o)
-    let i = check_string_index(who,o,start)
+    let i = check_substring_index(who,o,start)
     if (end === undefined)
         return make_string(string_string(o).substring(i))    
     else {
-        let j = check_string_index(who,o,end)
+        let j = check_substring_index(who,o,end)
         if (j<i)
             fail( who + ": ending index is smaller than start index, got: " + i + " and " + j)
         return make_string(string_string(o).substring(i,j))
@@ -128,11 +128,11 @@ function o_string_lt(o1,o2) {
 function o_string_split(o1,o2) {
     let who = "string-split"
     check_string(who,o1)
-    if (o2 === undefined)
-        return array_to_list(string_string(o1).split(" ").map(make_string))
+    if ((o2 === o_undefined) || (o2 === undefined))
+        return array_to_list(string_string(o1).split(" ").filter((x) => x !== "").map(make_string))
     else {
         check_string(who,o2)
-        return array_to_list(string_string(o1).split(string_string(o2)).map(make_string))
+        return array_to_list( string_string(o1).split(string_string(o2)).filter((x) => x !== "").map(make_string))
     }
 }
     
@@ -143,6 +143,15 @@ function check_string_index(who,o,i) {
     let n = o[1].length
     let idx = number_value(i)
     if(!( (0 <= idx) && ( idx < n)))
+        fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
+    return idx
+}
+function check_substring_index(who,o,i) {
+    check_string(who,o)
+    check_integer(who,i)
+    let n = o[1].length
+    let idx = number_value(i)
+    if(!( (0 <= idx) && ( idx <= n)))
         fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
     return idx
 }
@@ -727,6 +736,7 @@ function o_hash_ref(o, sym, defval) {
     let v = o_trie_lookup(o, sym)
     if (v === o_undefined) {
         if (defval === o_undefined) {
+            js_write(o)
             throw new Error(who + ": key is not present, key:" + format_symbol(sym))
         }
         v = defval
@@ -3476,15 +3486,13 @@ js_write(o_trie_lookup(t, bar))
 //    '(hash-keys (module->hash "lib/rac/private/base-common/bind.rac"))'))))
 
 
-//js_display(format(kernel_eval(parse1(
-//    '(hash-ref (module->hash "basic-tests/hash.rac") \'results)'))))
 
 function t(str) {
     // js_display("--")
     js_display(str)
     let result = kernel_eval(parse1(str))
-    js_display(format(result))
-    // js_write(result)
+    //js_display(format(result))
+    js_write(format(result, write_mode))
 }
 
 // OPAQUE
@@ -3732,18 +3740,15 @@ t('(let ([x (variable (quote foo))]) (begin (variable-set! x 32) (variable-ref x
 //js_display(format(kernel_eval(parse1(
 //    '(module->hash "lib/rac/private/stitcher.rac")'))))
 
-
 //js_display(format(kernel_eval(parse1(
 //    '(module->hash "lib/rac/private/base/main.rac")'))))
 
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (module->hash "test-looper.rac") \'result)'))))
 
-//js_display(format(kernel_eval(parse1(
-//    '(hash-ref (module->hash "using-test-lang.rac") \'result)'))))
 
 //js_display(format(kernel_eval(parse1(
-//    '(hash-ref (module->hash "test-kernel.rac") \'result)'))))
+//    (hash-ref (module->hash "test-kernel.rac") \'result)'))))
 
 
 //js_write(initial_env_set)
@@ -3777,9 +3782,22 @@ js_write(T1)
 // js_write(o_kernel_env())
 
 
+/*
 t("(hash 'a 1)")
 t("(hash 'a 2 'b 3)")
 t("(hash-count (hash 'a 1))")
 t("(hash-count (hash 'a 2 'b 3))")
+t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
+*/
 
-t("(hash-keys-subset? (hash 'a 1) (hash 'a 2 'b 3))")
+
+//js_display(format(kernel_eval(parse1(
+//    "(module->hash \"using-test-lang.rac\")"))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash "basic-tests/hash.rac") \'results)'))))
+
+js_display(format(kernel_eval(parse1(
+    '(hash-ref (module->hash "basic-tests/kernel.rac") \'results)'))))
+
+//t('(string-split " apple pie  ")')

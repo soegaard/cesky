@@ -1,14 +1,14 @@
 // CEK-interpreter in ES6 JavaScript
 
 // TODO SHORT TERM
+//  [ ] get harness to run
 //  [ ] fix o_error
 //  [x] fix bug in hash-count (or hash_extend)
-//  [ ] track down the datum->syntax undefined error
-//      - [ ] test looper
-//      - [ ] test sticher
+//  [x] track down the datum->syntax undefined error
+//      - [x] test looper
+//      - [x] test sticher
 //  [x] multiple arguments for +, -, * 
 //  [ ] replace representation of environments with tries
-//  [ ] handle \ as an escape in string syntax
 
 // TODO
 //  [x] Use uninterned JavaScript symbol for tag
@@ -575,7 +575,7 @@ function trie_set(trie, id, key, val) {
     let next = false
     while (id > 0) {
         next = trie_next(trie)[id & TRIE_BFACTOR_MASK]
-        if (next === o_undefined) {
+        if (next === o_undefined) {    
             next = make_empty_trie()
             trie_next(trie)[id & TRIE_BFACTOR_MASK] = next
             trie = next
@@ -1067,8 +1067,8 @@ function register_module(modpath, mod) {
 
 // private primitive
 function get_read_and_eval(lang, mod) {
-    js_display("> o_get_read_and_eval")
-    js_write(["lang", lang])
+    // js_display("> o_get_read_and_eval")
+    // js_write(["lang", lang])
     //js_write(["mod",  mod])    
     let proc = o_hash_ref(mod, sym("read-and-eval"), o_false)
     // js_write(["proc",  proc])    
@@ -1191,7 +1191,7 @@ function library_path_to_file_path(path) {
 // This is the implementation of the private primitive `o_module_hash_star`.
 
 function module_to_hash_star(mp) {
-    js_display(["module_to_hash_star", format(mp)])
+    // js_display(["module_to_hash_star", format(mp)])
 
     // Does the work for module->hash in the case,
     // where the module is already declared.
@@ -1204,7 +1204,7 @@ function module_to_hash_star(mp) {
     while (! (ms === o_null)) {
         let a = o_car(ms)
         if ( module_path_equal(o_car(a), mp) ) {
-            js_display("module_to_hash_star, found: " + format(mp))
+            // js_display("module_to_hash_star, found: " + format(mp))
             // js_write(mp)
             // js_write(o_cdr(a))
             return o_cdr(a)
@@ -2795,6 +2795,55 @@ function o_js_write(o) {
     return o_void
 }
 
+/// RUNTIME
+
+function get_env_as_trie() {
+    let env  = process.env
+    let es   = Object.entries(env)
+    let trie = make_empty_trie()
+    for (let [key, value] of es) {
+        o_trie_set(trie, sym(key), make_string(value))
+    }
+    return trie
+    js_write(trie)
+}
+
+let o_the_runtime_env = make_empty_trie()
+// current working directory
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("dir"),
+                               make_string(process.cwd()))
+// arguments without executable and without script name
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("args"),
+                               array_to_list(process.argv.slice(2).map(make_string)))
+// script path used to invoke the script
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("script"),
+                               make_string(process.argv[1]))
+// executable path (node outside the browser)
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("exe"),
+                               make_string(process.argv[0]))
+// system time ('aix, 'darwin, freebsd, linux, openbsd, sunos, win32
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("platform"),
+                               make_string(process.platform))
+// process id
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("pid"),
+                               make_string(process.pid))
+// major version (of rac) 
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("version"),
+                               make_string("0"))
+// minor version (of rac) 
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("minor-version"),
+                               make_string("1"))
+
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("env"),
+                               get_env_as_trie())
+
+
+function o_runtime_env() {
+    return o_the_runtime_env
+}
+
+
+
 
 
 
@@ -2938,6 +2987,9 @@ function make_top_env(mode) {
     // handle?, fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
     // stat, ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
+
+    extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
+    
     // runtime-ev, current-time
     // process, process-read, process-wait, string->shell, shell->strings
     
@@ -3859,12 +3911,22 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 // js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
 
 
+// js_display(format(kernel_eval(parse1('(list #t #f #true #false)'))))
+
+//js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/base.rac")'))))
+
+
+//js_display(format(kernel_eval(parse1(
+//    '(hash-keys (module->hash "tests/equal.rac"))'))))
+
+
+js_display(format(kernel_eval(parse1(
+    '(hash-ref (runtime-env) \'env)'))))
 
 
 
-// js_display(format(kernel_eval(parse1(
-//    '(module->hash "lib/rac/private/base/main.rac")'))))
 
 
-js_display(format(kernel_eval(parse1('(list #t #f #true #false)'))))
+
 

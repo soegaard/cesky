@@ -602,8 +602,6 @@ function trie_clone(trie) {
     return make_trie(count, key, val, next)
 }
 function trie_extend(trie, id, key, val, added_box) {
-    js_display("trie_extend")
-    console.log([id, key, val, added_box])
     // added is an array with one element
     let new_trie = false
     if (trie === o_undefined) {
@@ -1542,6 +1540,20 @@ function o_arg_error(name, what, arg) {
     fail_arg(symbol_string(name), string_string(what), arg)
     return o_undefined
 }
+function o_arity_error(name, args) {
+    const who = "arity-error"
+    if (! ((name === o_false) || is_string(name))) 
+        fail_arg(who, "string or #f", name)
+    if (! is_list(args))
+        fail_arg(who, "list", args)
+
+    let msg = tilde_a(list( (name === o_false) ? string("[procedure]") : name,
+                            make_string(": wrong number of arguments: "),
+                            (args === o_null) ? make_string("[no arguments]")
+                                              : tilde_v(args)))
+    fail(msg)
+    return o_undefined
+}
 
 
 
@@ -1828,7 +1840,6 @@ function lex_number(sp,factor) {
 }
 
 function lex_symbol(sp) {    
-    console.log("lex_symbol")
     let from = string_input_port_pos(sp)    
     let c = read_char(sp)
     let cs = [c]
@@ -2007,8 +2018,6 @@ function parse_s_expr(tokens, i) {
                 if (t === RPAREN) {
                     let inst = pop()
                     let data = inst[1]
-                    js_display("data")
-                    js_write(data)
                     obj = data
                 } else
                     throw new Error("expected end paren, but got end bracket")
@@ -2587,7 +2596,7 @@ function continue_step(s) {
                         error_arg("apply", "list", args)                        
                     // no break => we loop and handle the new rator and args
                 } else if (rator === o_kernel_eval) {
-                    js_display("KERNEL EVAL")
+                    // js_display("KERNEL EVAL")
                     //js_display("env before")
                     //js_display("args")
                     //js_display(format(args))
@@ -2925,7 +2934,8 @@ function make_top_env(mode) {
     extend(sym("~s"),           primitiven("~s",           o_tilde_s, -1))
     extend(sym("error"),        primitiven("error",        o_error, -1))
     extend(sym("alert"),        primitiven("alert",        o_alert, -1))
-    // arity-error
+
+    extend(sym("arity-error"),  primitive2("arity-error",  o_arity_error))
     extend(sym("arg-error"),    primitive3("arg-error",    o_arg_error))
     
     extend(sym("top-ref"),      primitive1("top-ref",      o_top_ref))
@@ -3756,8 +3766,6 @@ t('(let ([x (variable (quote foo))]) (begin (variable-set! x 32) (variable-ref x
 
 //js_write(o_modules)
 
-js_display(format(kernel_eval(parse1(
-    '(module->hash "lib/rac/private/base-hygienic/and-or.rac")'))))
 
 //js_write(o_top_env)
 
@@ -3841,3 +3849,6 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 // js_display(format(kernel_eval(parse1('(integer? 42)'))))
 
 
+
+js_display(format(kernel_eval(parse1(
+    '(module->hash "lib/rac/private/base-hygienic/define.rac")'))))

@@ -197,7 +197,7 @@ function symbol_loc(o)    { return o[4] }
 
 function make_uninterned_symbol(str) {
     let key = Symbol(str)            // used as keys in hash tables
-    return [symbol_tag, str, key, o_false]
+    return [symbol_tag, str, key, symbol_counter++]
 }
 
 function o_symbol_to_string(o) {
@@ -602,6 +602,8 @@ function trie_clone(trie) {
     return make_trie(count, key, val, next)
 }
 function trie_extend(trie, id, key, val, added_box) {
+    js_display("trie_extend")
+    console.log([id, key, val, added_box])
     // added is an array with one element
     let new_trie = false
     if (trie === o_undefined) {
@@ -2905,6 +2907,7 @@ function make_top_env(mode) {
     extend(sym("relative-path?"),    primitive1("relative-path?",    o_is_relative_path))
     extend(sym("module-path?"),      primitive1("module-path?",      o_is_module_path))
     extend(sym("build-module-path"), primitive2("build-module-path", o_build_module_path)) // todo: test
+
     extend(sym("variable?"),     primitive1("variable?",     o_is_variable))
     extend(sym("variable"),      primitive1("variable",      o_make_variable))
     extend(sym("variable-ref"),  primitive1("variable-ref",  o_variable_ref))
@@ -3753,8 +3756,8 @@ t('(let ([x (variable (quote foo))]) (begin (variable-set! x 32) (variable-ref x
 
 //js_write(o_modules)
 
-//js_display(format(kernel_eval(parse1(
-//    '(module->hash "lib/rac/private/base-hygienic/and-or.rac")'))))
+js_display(format(kernel_eval(parse1(
+    '(module->hash "lib/rac/private/base-hygienic/and-or.rac")'))))
 
 //js_write(o_top_env)
 
@@ -3835,6 +3838,6 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 // js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
 
 
-js_display(format(kernel_eval(parse1('(integer? 42)'))))
+// js_display(format(kernel_eval(parse1('(integer? 42)'))))
 
 

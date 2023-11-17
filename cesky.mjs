@@ -418,11 +418,14 @@ function o_append(os) {
 
 
 // NUMBERS
-function is_number(o)   { return              Array.isArray(o) && (tag(o) === number_tag)  }
-function o_is_number(o) { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
-
 function make_number(x)      { return [number_tag, x] }
 function number_value(o)     { return o[1] }
+
+function is_number(o)    { return              Array.isArray(o) && (tag(o) === number_tag)  }
+function o_is_number(o)  { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
+function o_is_integer(o) { return make_boolean(Array.isArray(o)
+                                               && (tag(o) === number_tag)
+                                               && (Number.isInteger(o[1]))) }
 
 function o_plus(ns) {
     let i = 0;
@@ -2833,8 +2836,8 @@ function make_top_env(mode) {
     extend(sym("list-ref"),    primitive2("list-ref",    o_list_ref))
     extend(sym("list-set"),    primitive3("list-set",    o_list_set))
 
-    // integer?
     extend(sym("number?"),     primitive1("number?",     o_is_number))
+    extend(sym("integer?"),    primitive1("integer?",    o_is_integer))
     extend(sym("zero?"),       primitive1("zero?",       o_is_zero))
     extend(sym("+"),           primitiven("+",           o_plus,  -1))
     extend(sym("-"),           primitiven("-",           o_minus, -2))
@@ -3829,5 +3832,9 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 
 
 // js_write(parse1("(foo bar 42 baz)", make_string("here")))
-js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
+// js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
+
+
+js_display(format(kernel_eval(parse1('(integer? 42)'))))
+
 

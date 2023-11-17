@@ -2842,9 +2842,13 @@ function o_runtime_env() {
     return o_the_runtime_env
 }
 
-
-
-
+function o_current_time() {
+    let milli = Date.now()
+    let secs = milli/1000
+    let whole_secs = Math.floor(secs)
+    return o_cons( make_number(whole_secs),
+                   make_number( (milli - 1000*whole_secs)*1000000 ) )
+}
 
 
 // Primitives
@@ -2989,8 +2993,8 @@ function make_top_env(mode) {
     // stat, ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
 
     extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
-    
-    // runtime-ev, current-time
+    extend(sym("current-time"), primitive0("current-time",   o_current_time))
+
     // process, process-read, process-wait, string->shell, shell->strings
     
     extend(sym("string-read"), primitive123("string-read", o_string_read))
@@ -3921,8 +3925,11 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(hash-keys (module->hash "tests/equal.rac"))'))))
 
 
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (runtime-env) \'env)'))))
+
 js_display(format(kernel_eval(parse1(
-    '(hash-ref (runtime-env) \'env)'))))
+    '(current-time)'))))
 
 
 

@@ -1651,11 +1651,18 @@ function peek_char(sp) {
         return s[i]
     }       
 }
+function peek_string(sp, expect) {
+    let s = string_input_port_string(sp)
+    let i = string_input_port_pos(sp)
+    let n = expect.length
+    let p = s.substring(i,i+n)
+    return p == expect
+}
 function eat_string(sp, expect, who, msg) {
     let s = string_input_port_string(sp)
     let i = string_input_port_pos(sp)
     let n = expect.length
-    let p = s.substring(i,n)
+    let p = s.substring(i,i+n)
     if (p == expect)
         set_string_input_port_pos(sp,i+n)
     else
@@ -1805,13 +1812,19 @@ function lex_boolean(sp) {
     let c = read_char(sp)
     if (c == "t") {
         if (is_delimiter(peek_char(sp))) {
-            return make_boolean(true)
+            return o_true
+        } else if (peek_string(sp,"rue")) {
+            eat_string(sp,"rue")
+            return o_true
         } else {
             read_error("bad syntax '#t" + peek_char(sp) + "'") 
         }
     } else if (c == "f") {
         if (is_delimiter(peek_char(sp))) {
             return make_boolean(false)
+        } else if (peek_string(sp,"alse")) {
+            eat_string(sp,"alse")
+            return o_false
         } else {
             read_error("bad syntax '#f" + peek_char(sp) + "'")
         }
@@ -3846,9 +3859,12 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 // js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
 
 
-// js_display(format(kernel_eval(parse1('(integer? 42)'))))
 
 
 
-js_display(format(kernel_eval(parse1(
-    '(module->hash "lib/rac/private/base-hygienic/define.rac")'))))
+// js_display(format(kernel_eval(parse1(
+//    '(module->hash "lib/rac/private/base/main.rac")'))))
+
+
+js_display(format(kernel_eval(parse1('(list #t #f #true #false)'))))
+

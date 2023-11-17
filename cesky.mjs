@@ -12,7 +12,6 @@
 
 // TODO
 //  [x] Use uninterned JavaScript symbol for tag
-//  [ ] Add source location to tokens.
 //  [ ] Implement more primitives
 //  [/] Port lib/
 //  [ ] Command line arguments

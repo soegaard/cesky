@@ -194,10 +194,11 @@ function make_symbol(str) {
 function symbol_string(o) { return o[1] }
 function symbol_key(o)    { return o[2] }
 function symbol_id(o)     { return o[3] }
+function symbol_loc(o)    { return o[4] }
 
 function make_uninterned_symbol(str) {
     let key = Symbol(str)            // used as keys in hash tables
-    return [symbol_tag, str, key]
+    return [symbol_tag, str, key, o_false]
 }
 
 function o_symbol_to_string(o) {
@@ -1704,6 +1705,21 @@ const UNQUOTE         = Symbol.for(",")
 const UNQUOTESPLICING = Symbol.for(",@")
 const HASHSEMICOLON   = Symbol.for("#;")
 
+// Locations
+function make_location(where, pos, from, to) {
+    if (from === undefined)
+        from = o_false
+    if (to === undefined)
+        to = o_false
+    return list(where, pos, to - from)
+}
+function location(where, sp, from) {
+    let to = string_input_port_pos(sp)
+    return make_location(where, from, from, to)
+}
+
+let lexer_where = o_false    // used by lex_symbol to add locations to symbols
+
 function lex(sp) {
     skip_atmosphere(sp)
     let c = peek_char(sp)
@@ -1752,7 +1768,7 @@ function lex(sp) {
             return HASHSEMICOLON
         } else {
             back_char(sp)
-            return lex_symbol(sp)           
+            return lex_symbol(sp)
         }
     } else if (c == "`") {
         read_char(sp)
@@ -1789,7 +1805,6 @@ function lex_boolean(sp) {
     }
 }
 
-
 function lex_number(sp,factor) {
     // console.log("lex_number")
     let d = read_char(sp)
@@ -1808,14 +1823,16 @@ function lex_number(sp,factor) {
     return make_number((factor === undefined) ? n : -n)
 }
 
-function lex_symbol(sp) {
-    // console.log("lex_symbol")
+function lex_symbol(sp) {    
+    console.log("lex_symbol")
+    let from = string_input_port_pos(sp)    
     let c = read_char(sp)
     let cs = [c]
     let i = 1
     while (!is_delimiter(peek_char(sp)) && (peek_char(sp)!==EOF)) {
         cs[i++] = read_char(sp)
     }
+    let to  = string_input_port_pos(sp)
     return sym(cs.join(""))
 }
 
@@ -2066,7 +2083,11 @@ function parse_s_expr(tokens, i) {
     }
 }
             
-function read_from_string(s) {
+function read_from_string(s, where) {
+    if (where === undefined)
+        where = o_false
+    let old = lexer_where
+    lexer_where = where
     let sp = make_string_input_port(s)
     let tokens = []
     let i = 0
@@ -2075,11 +2096,14 @@ function read_from_string(s) {
         tokens[i++] = t
         t = lex(sp)
     }
+    lexer_where = old
     return tokens
 }
 
-function parse1(str) {
-    let tokens = read_from_string(str)
+function parse1(str, where) {
+    if (where === undefined)
+        where = o_false
+    let tokens = read_from_string(str, where)
     return parse_s_expr(tokens, 0)[0]
 }
 
@@ -2096,7 +2120,9 @@ function o_string_read(str, start, where) {
     
     let sp = make_string_input_port(string_string(str))
     set_string_input_port_pos(sp,idx)
-    
+
+    let old_lexer_where = lexer_where
+    lexer_where = where
     let tokens = []
     let i = number_value(start)
     let t = lex(sp)
@@ -2104,6 +2130,7 @@ function o_string_read(str, start, where) {
         tokens[i++] = t
         t = lex(sp)
     }
+    lexer_where = old_lexer_where
 
     let first = o_null
     let last  = false
@@ -2301,7 +2328,6 @@ function lookup(env,sym) {
 function env_to_set(env) {
     let strs = []
     let i = 0
-    let sym = Symbol("a symbol")
     while (env.length !== 0) {
         strs[i++] = symbol_string(env[0][0])
         env = env[1]
@@ -3797,7 +3823,12 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (module->hash "basic-tests/hash.rac") \'results)'))))
 
-js_display(format(kernel_eval(parse1(
-    '(hash-ref (module->hash "basic-tests/kernel.rac") \'results)'))))
+//js_display(format(kernel_eval(parse1(
+//    '(hash-ref (module->hash "basic-tests/kernel.rac") \'results)'))))
 
 //t('(string-split " apple pie  ")')
+
+
+// js_write(parse1("(foo bar 42 baz)", make_string("here")))
+js_write(read_from_string("(foo1 bar1 42 baz1)", make_string("here")))
+

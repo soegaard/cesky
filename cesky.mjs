@@ -60,6 +60,7 @@ const hash_tag               = Symbol("hash")
 //const trie_tag               = ["trie"]
 const variable_tag           = Symbol("variable")
 const opaque_tag             = Symbol("opaque")
+const handle_tag             = Symbol("handle")
 
 const null_tag               = Symbol("null")       // These names are useful for debugging,
 const void_tag               = Symbol("void")       // although they could be made singletons.
@@ -873,6 +874,15 @@ function o_opaque_ref(key, obj, defval) {
     }
     return defval
 }
+
+// HANDLE
+
+function make_handle(fshandle)   { return [handle_tag, fs_handle] }
+function handle_fshandle(o)      { return o[1] }
+
+function is_handle(o)   { return              Array.isArray(o) && (tag(o) === handle_tag)  }
+function o_is_handle(o) { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
+
 
 
 
@@ -3043,7 +3053,8 @@ function make_top_env(mode) {
     extend(sym("variable-ref"),  primitive1("variable-ref",  o_variable_ref))
     extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     
-    // handle?, fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
+    extend(sym("handle?"),      primitive1("handle?",        o_is_handle))
+    // fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
 
     extend(sym("stat"),          primitive123("stat",       o_stat))

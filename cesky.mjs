@@ -2850,6 +2850,61 @@ function o_current_time() {
                    make_number( (milli - 1000*whole_secs)*1000000 ) )
 }
 
+// constants from stat.h
+const S_IFMT  = 61440  // octal: 0170000 
+const S_IFDIR = 16384  // octal:  040000 
+const S_IFLNK = 40960  // octal: 0120000
+
+function o_stat(path, follow_links, false_on_error) {
+    const who = "stat"
+    if (follow_links === undefined)
+        follow_links = o_true
+    if (false_on_error === undefined)
+        false_on_error = o_false
+    check_path_string(who, path)
+
+    let result = make_empty_trie()
+
+    let stats = o_false
+    let str_path = string_string(path)
+    if (follow_links === o_true)
+        stats = fs.statSync(str_path, {bigint: true, throwIfNoEntry: false})
+    else
+        stats = fs.lstatSync(str_path, {bigint: true, throwIfNoEntry: false})
+    if (stats === undefined)
+        return o_false
+
+    let mode = Number(stats.mode)
+    if ((mode & S_IFMT) === S_IFDIR)
+      result = o_trie_set(result, sym("type"), sym("dir"))
+    else if ((mode & S_IFMT) === S_IFLNK)
+      result = o_trie_set(result, sym("type"), sym("link"))
+    else
+      result = o_trie_set(result, sym("type"), sym("file"))
+    
+    function to_num(big) {
+        return make_number(Number(big))
+    }
+    result = o_trie_set(result, sym("mode"),                       to_num(stats.mode))
+    result = o_trie_set(result, sym("device-id"),                  to_num(stats.dev))
+    result = o_trie_set(result, sym("inode"),                      to_num(stats.ino))
+    result = o_trie_set(result, sym("hardlink-count"),             to_num(stats.nlink))
+    result = o_trie_set(result, sym("user-id"),                    to_num(stats.uid))
+    result = o_trie_set(result, sym("group-id"),                   to_num(stats.gid))
+    result = o_trie_set(result, sym("device-id-for-special-file"), to_num(stats.rdev))
+    result = o_trie_set(result, sym("size"),                       to_num(stats.size))
+    result = o_trie_set(result, sym("block-size"),                 to_num(stats.blksize))
+    result = o_trie_set(result, sym("block-count"),                to_num(stats.blocks))
+    result = o_trie_set(result, sym("access-time-seconds"),        make_number(Number(stats.atimeMs)/1000))
+    result = o_trie_set(result, sym("access-time-nanoseconds"),    to_num(stats.atimeNS))
+    result = o_trie_set(result, sym("modify-time-seconds"),        make_number(Number(stats.mtimeMs)/1000))
+    result = o_trie_set(result, sym("modify-time-nanoseconds"),    to_num(stats.mtimeNs))
+    result = o_trie_set(result, sym("creation-time-seconds"),      make_number(Number(stats.ctimeMs)/1000))
+    result = o_trie_set(result, sym("creation-time-nanoseconds"),  to_num(stats.ctimeNs))
+
+    return result
+}
+
 
 // Primitives
 function primitive0(name, proc)       { return register_primitive(name, proc, dispatch0,   1<<0)}
@@ -2990,7 +3045,10 @@ function make_top_env(mode) {
     
     // handle?, fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
-    // stat, ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
+
+    extend(sym("stat"),          primitive123("stat",       o_stat))
+
+    // ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
 
     extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
     extend(sym("current-time"), primitive0("current-time",   o_current_time))
@@ -3929,11 +3987,5 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(hash-ref (runtime-env) \'env)'))))
 
 js_display(format(kernel_eval(parse1(
-    '(current-time)'))))
-
-
-
-
-
-
+    '(hash-ref (stat "lib") \'device-id)'))))
 

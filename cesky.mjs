@@ -40,6 +40,7 @@ function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
 
+
 // TAGS
 
 // Tags are unique values.
@@ -877,8 +878,20 @@ function o_opaque_ref(key, obj, defval) {
 
 // HANDLE
 
-function make_handle(fshandle)   { return [handle_tag, fs_handle] }
-function handle_fshandle(o)      { return o[1] }
+const handle_open_fd_in_status     = Symbol("handle-open-fd-in-status")
+const handle_open_fd_out_status    = Symbol("handle-open-fd-out-status")
+const handle_closed_status         = Symbol("handle-closed-status")
+const handle_proces_running_status = Symbol("handle-process-running-status")
+const handle_proces_done_status    = Symbol("handle-process-done-status")
+const handle_cleanable_status      = Symbol("handle-cleanable-status")
+
+let handle_id_counter = 0
+
+function make_handle(fd,status) { return [handle_tag, handle_id_counter++, fd, status] }
+function handle_id(o)           { return o[1] }
+function handle_fd(o)           { return o[2] } // union
+function handle_result(o)       { return o[2] } // union
+function handle_status(o)       { return o[3] }
 
 function is_handle(o)   { return              Array.isArray(o) && (tag(o) === handle_tag)  }
 function o_is_handle(o) { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
@@ -912,15 +925,19 @@ function o_is_module_path(o) {
         throw new Error("module-path?: expected a symbol or a string path")
 }
 
-function o_is_path_string(o) {
+function is_path_string(o) {
     const who = "path-string?"
     check_string(who, o)
     const s = string_string(o)
     if (s === "")
         return o_false
     if (/[\0]/.test(s))
-        return o_false
-    return o_true
+        return false
+    return true
+}
+
+function o_is_path_string(o) {
+    return !is_path_string(o) ? o_false : o_true
 }
 
 function path_is_absolute(p) {
@@ -1390,15 +1407,25 @@ function fail(msg) {
 }
 function show_err1w(who, str, obj) {
     if (who !== null)
-        fprintf(stderr, "%s: ", who)
-    fprintf(stderr, "%s: ", str)
-    o_fprint(stderr, obj)
+        process.stderr.write(who + ": ")
+    process.stderr.write(str + " \n")
+    process.stderr.write(format(obj))
+    process.stderr.write("\n")
 }
 function fail1w(who, str, obj) {
     // error_color();
     show_err1w(who, str, obj)
     fail("")
 }
+function fail1w_errno(who, str, obj, error) {
+    // error_color();
+    const msg = error.message
+    show_err1w(who, str, obj)
+    // js_display(" (" + msg + ")")
+    throw new Error(msg)
+}
+
+
 function fail_arg(who, what, obj) {
     let not_a = false
     if ((what[0] === 'a') || (what[0] === 'e') || (what[0] === 'i')
@@ -2235,6 +2262,7 @@ function is_atom (o) {
         || (t === primitive_tag)  
         || (t === continuation_tag)
         || (t === hash_tag)
+        || (t === handle_tag)
         // || (t == trie_tag)
         || (o === o_null)          
         || (o === o_void)           
@@ -2265,6 +2293,7 @@ function format_atom (o, mode) {
     }
     else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)       { return "#<continuation>" }
+    else if (t == handle_tag)             { return "#<handle>" }
     else if (t == hash_tag)               { js_write(format(o_hash_keys(o))) ;
                                             //js_write(o) ;
                                             return "#<hash>" }        
@@ -2860,6 +2889,18 @@ function o_current_time() {
                    make_number( (milli - 1000*whole_secs)*1000000 ) )
 }
 
+//
+// FILES / STREAMS
+//
+
+function check_options_consumed(who, options) {
+    if (trie_count(options) > 0) {
+        let keys = hash_keys(options)
+        fail1w(who, "unrecognized or unused option", car(keys))
+    }
+}
+
+
 // constants from stat.h
 const S_IFMT  = 61440  // octal: 0170000 
 const S_IFDIR = 16384  // octal:  040000 
@@ -2914,6 +2955,54 @@ function o_stat(path, follow_links, false_on_error) {
 
     return result
 }
+
+function fd_open_input_handle(path, options) {
+    const who = "fd-open-input"
+    if (options === undefined)
+        options = make_empty_trie()
+
+    let fd = -1
+    
+    if (is_path_string(path)) {
+        check_hash(who, options)
+        check_options_consumed(who, options)
+
+        let path_str = string_string(path)
+        try   { fd = fs.openSync(path_str, "r") }
+        catch (error) { fail1w_errno(who, "file open failed", path, error) }
+
+        return fd
+    }
+    else if (path === sym("stdin")) {
+        check_hash(who, options)
+        check_options_consumed(who, options)
+
+        fd = get_std_handle(0)
+
+        return fd        
+    }
+    else if (is_integer(path)) {
+        fd = number_value(path)
+        if (fd < 0)
+            fail_arg(who, "path string, 'stdin, or nonnegative integer", path)
+
+        check_hash(who, options)
+        check_options_consumed(who, options)
+
+        return fd
+    } else 
+        fail_arg(who, "path string, 'stdin, or nonnegative integer", path)
+}
+
+function o_fd_open_input(path, options) {
+    if (options === undefined)
+        options = make_empty_trie()
+
+    return make_handle(fd_open_input_handle(path, options),
+                       handle_open_fd_in_status)
+}
+
+
 
 
 // Primitives
@@ -3053,8 +3142,10 @@ function make_top_env(mode) {
     extend(sym("variable-ref"),  primitive1("variable-ref",  o_variable_ref))
     extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     
-    extend(sym("handle?"),      primitive1("handle?",        o_is_handle))
-    // fd-open-input, fd-open-output, fd-open-close, fd-read, fd-write
+    extend(sym("handle?"),       primitive1("handle?",        o_is_handle))
+    extend(sym("fd-open-input"), primitive12("fd-open-input", o_fd_open_input))
+
+    // fd-open-output, fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
 
     extend(sym("stat"),          primitive123("stat",       o_stat))
@@ -3998,5 +4089,5 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(hash-ref (runtime-env) \'env)'))))
 
 js_display(format(kernel_eval(parse1(
-    '(hash-ref (stat "lib") \'device-id)'))))
+    '(fd-open-input "README.md")'))))
 

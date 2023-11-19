@@ -2918,12 +2918,25 @@ function o_current_time() {
 // FILES / STREAMS
 //
 
+
+function consume_option(options_box, name) {
+  let s = sym(name)
+  let opt = o_trie_lookup(options_box[0], s)
+
+  if (opt !== o_undefined)
+      options_box[0] = hash_remove(options_box[0], s)
+
+  return opt
+}
+
 function check_options_consumed(who, options) {
     if (trie_count(options) > 0) {
         let keys = hash_keys(options)
         fail1w(who, "unrecognized or unused option", car(keys))
     }
 }
+
+
 
 
 // constants from stat.h
@@ -3002,7 +3015,7 @@ function fd_open_input_handle(path, options) {
         check_hash(who, options)
         check_options_consumed(who, options)
 
-        fd = get_std_handle(0)
+        fd = process.stdin.fd
 
         return fd        
     }
@@ -3018,7 +3031,6 @@ function fd_open_input_handle(path, options) {
     } else 
         fail_arg(who, "path string, 'stdin, or nonnegative integer", path)
 }
-
 function o_fd_open_input(path, options) {
     if (options === undefined)
         options = make_empty_trie()
@@ -3026,6 +3038,63 @@ function o_fd_open_input(path, options) {
     return make_handle(fd_open_input_handle(path, options),
                        handle_open_fd_in_status)
 }
+function o_fd_open_output(path, options) {
+    const who = "fd-open-output";
+
+    if (options === undefined)  options = make_empty_trie()
+    
+    if (is_path_string(path)) {
+        check_hash(who, options)
+        
+        let options_box = [options]
+        let exists = consume_option(options_box, "exists")
+        check_options_consumed(who, options_box[0])
+
+        let mode = fs.constants.O_CREAT | fs.constants.O_EXCL
+        if (exists !== o_undefined) {
+            if (exists !== sym("error")) {
+                if (exists === sym("truncate"))
+                    mode = fs.constants.O_CREAT | fs.constants.O_TRUNC
+                else if (exists === sym("must-truncate"))
+                    mode = fs.constants.O_TRUNC
+                else if (exists === symbol("append"))
+                    mode = fs.constants.O_CREAT | fs.constants.O_APPEND
+                else if (exists === sym("update"))
+                    mode = 0
+                else if (exists === sym("can-update"))
+                    mode = fs.constants.O_CREAT
+                else
+                    zuo_fail1w(who, "invalid exists mode", exists)
+            }
+        }
+
+        let fd = -1
+        let path_str = string_string(path)
+        try   { fd = fs.openSync(path_str, "w", fs.constants.O_WRONLY | mode) }
+        catch (error) { fail1w_errno(who, "file open failed", path, error) }
+
+        return  make_handle(fd, handle_open_fd_out_status, 0)
+    } else if (path === sym("stdout")) {
+        check_hash(who, options)
+        check_options_consumed(who, options)
+        fd = process.stdout.fd
+        return make_handle(fd, handle_open_fd_out_status)
+    } else if (path === sym("stderr")) {
+        check_hash(who, options)
+        check_options_consumed(who, options)
+        fd = process.stderr.fd
+        return make_handle(fd, handle_open_fd_out_status)
+    } else {
+        if (!is_nonnegative_integer(path))
+            fail_arg(who, "path string, 'stdout, 'stderr, or nonnegative integer", path)
+        check_hash(who, options)
+        check_options_consumed(who, options)
+        fd = number_value(path) // todo: is this correct?
+        return make_handle(fd, handle_open_fd_out_status)
+    }
+}
+
+
 function close(fd) {
     fs.closeSync(fd)
 }
@@ -3066,6 +3135,23 @@ function drain(fd,amount) {
         return fs.readFileSync(fd)
     } else
         throw new Error("internal error: implement this case")
+}
+function o_fd_write(handle, str) {
+    const who = "fd-write"
+    if ((tag(handle) !== handle_tag) 
+        || handle_status(handle) !== handle_open_fd_out_status) {
+        fail_arg(who, "open output file descriptor", handle)
+    }
+    check_string(who, str)
+    
+    let s = string_string(str)
+    fill(s, handle_fd(handle))
+
+    return o_void;
+}
+function fill(s, fd) {
+    try { fs.writeFileSync(fd, s) }
+    catch (e) { fail1w_errno(who, "error writing to stream", dir_path, e) }
 }
 function o_ls(dir_path) {
     const who = "ls"
@@ -3241,13 +3327,14 @@ function make_top_env(mode) {
     extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     
     extend(sym("handle?"),       primitive1("handle?",        o_is_handle))
-    // fd-open-output,
+    // ,
     extend(sym("fd-open-input"), primitive12("fd-open-input", o_fd_open_input))
+    extend(sym("fd-open-output"),primitive12("fd-open-output", o_fd_open_output))
     extend(sym("fd-close"),      primitive1("fd-close",       o_fd_close))
 
     // fd-open-close,
     extend(sym("fd-read"),       primitive2("fd-read",        o_fd_read))
-    // fd-write
+    extend(sym("fd-write"),      primitive2("fd-write",       o_fd_write))
     extend(sym("eof"), o_eof)
     // fd-terminal?, cleanable-file, cleanable-cancel
 
@@ -4185,18 +4272,15 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //js_display(format(kernel_eval(parse1(
 //    '(module->hash "lib/rac/base.rac")'))))
 
+//js_display(format(kernel_eval(parse1('(hash-ref (runtime-env) \'env)'))))
+//js_display(format(kernel_eval(parse1('(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
+//js_display(format(kernel_eval(parse1('(ls "foobar")'))))
+// js_display(format(kernel_eval(parse1('(mkdir "foobar")'))))
 
- js_display(format(kernel_eval(parse1(
-    '(hash-keys (module->hash "tests/equal.rac"))'))))
+// js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 
 
-//js_display(format(kernel_eval(parse1(
-//    '(hash-ref (runtime-env) \'env)'))))
+js_display(format(kernel_eval(parse1('(let ([fd (fd-open-output "test.md")]) (fd-write fd "hello"))'))))
 
-//js_display(format(kernel_eval(parse1(
-//    '(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
-
-//js_display(format(kernel_eval(parse1(
-//    '(ls "foobar")'))))
 
 

@@ -428,6 +428,16 @@ function o_is_number(o)  { return make_boolean(Array.isArray(o) && (tag(o) === n
 function o_is_integer(o) { return make_boolean(Array.isArray(o)
                                                && (tag(o) === number_tag)
                                                && (Number.isInteger(o[1]))) }
+function is_integer(o)   { return  (Array.isArray(o)
+                                    && (tag(o) === number_tag)
+                                    && (Number.isInteger(o[1]))) }
+
+function is_nonnegative_integer(o) {
+    return  (Array.isArray(o)
+             && (tag(o) === number_tag)
+             && Number.isInteger(o[1])
+             && o[1]>=0)
+}
 
 function o_plus(ns) {
     let i = 0;
@@ -3016,20 +3026,48 @@ function o_fd_open_input(path, options) {
     return make_handle(fd_open_input_handle(path, options),
                        handle_open_fd_in_status)
 }
-
 function close(fd) {
     fs.closeSync(fd)
 }
-
-
 function o_fd_close(handle) {
     check_input_output_fd("fd-close", handle)
     let fd = handle_fd(handle)
     close(fd)
     set_handle_status(handle, handle_closed_status)
-
     return o_void
 }
+const avail_symbol = sym("avail")
+
+function o_fd_read(handle, amount) {
+    const who = "fd-read"
+    if ((tag(handle) !== handle_tag) 
+        || handle_status(handle) !== handle_open_fd_in_status) {
+        fail_arg(who, "open input file descriptor", handle)
+    }
+    
+    let amt = -1
+    if (amount !== o_eof) {
+        if (amount === avail_symbol)
+            amt = -2
+        else if (is_nonnegative_integer(amount))
+            amt = number_value(amount)
+        else
+            fail_arg(who, "nonnegative integer, eof, or 'avail", amount)
+    }
+
+    return make_string(drain(handle_fd(handle), amt))
+}
+function drain(fd,amount) {
+    // TODO: This only handles -1    
+    // amount as -1 => read until EOF
+    // amount as -2 => non-blocking read
+
+    if (amount === -1) {
+        return fs.readFileSync(fd)
+    } else
+        throw new Error("internal error: implement this case")
+}
+
 
 
 // Primitives
@@ -3174,8 +3212,11 @@ function make_top_env(mode) {
     extend(sym("fd-open-input"), primitive12("fd-open-input", o_fd_open_input))
     extend(sym("fd-close"),      primitive1("fd-close",       o_fd_close))
 
-    // fd-open-close, fd-read, fd-write
-    // eof, fd-terminal?, cleanable-file, cleanable-cancel
+    // fd-open-close,
+    extend(sym("fd-read"),       primitive2("fd-read",        o_fd_read))
+    // fd-write
+    extend(sym("eof"), o_eof)
+    // fd-terminal?, cleanable-file, cleanable-cancel
 
     extend(sym("stat"),          primitive123("stat",       o_stat))
 
@@ -4118,6 +4159,6 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(hash-ref (runtime-env) \'env)'))))
 
 js_display(format(kernel_eval(parse1(
-    '(let ([fd (fd-open-input "README.md")]) (begin (fd-close fd) fd))'))))
+    '(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
 
 

@@ -887,16 +887,15 @@ const handle_cleanable_status      = Symbol("handle-cleanable-status")
 
 let handle_id_counter = 0
 
-function make_handle(fd,status) { return [handle_tag, handle_id_counter++, fd, status] }
-function handle_id(o)           { return o[1] }
-function handle_fd(o)           { return o[2] } // union
-function handle_result(o)       { return o[2] } // union
-function handle_status(o)       { return o[3] }
+function make_handle(fd,status)  { return [handle_tag, handle_id_counter++, fd, status] }
+function handle_id(o)            { return o[1] }
+function handle_fd(o)            { return o[2] } // union
+function handle_result(o)        { return o[2] } // union
+function handle_status(o)        { return o[3] }
+function set_handle_status(o, s) { o[3] = s }
 
 function is_handle(o)   { return              Array.isArray(o) && (tag(o) === handle_tag)  }
 function o_is_handle(o) { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
-
-
 
 
 // MODULES
@@ -1464,11 +1463,27 @@ function check_non_zero(name, o) {
         fail_expected1(name, "non-zero number", o)
     
 }
-
 function check_path_string(who,o) {
     if (o_is_path_string(o) === o_false)
         fail_expected1(who, "path string", o)
 }
+
+function is_input_output_fd(o) {
+    if (tag(o) === handle_tag) {
+        let s = handle_status(o)
+        if ( (s === handle_open_fd_out_status)
+             || (s === handle_open_fd_in_status))
+            return true
+    }
+    return false
+}
+
+
+function check_input_output_fd(who, handle) {
+    if (!is_input_output_fd(handle))
+        fail_arg(who, "open input or output file descriptor", handle)
+}
+
 
 function fail_expected1(name, type, value) {
     console.log(name + ":")
@@ -3002,7 +3017,19 @@ function o_fd_open_input(path, options) {
                        handle_open_fd_in_status)
 }
 
+function close(fd) {
+    fs.closeSync(fd)
+}
 
+
+function o_fd_close(handle) {
+    check_input_output_fd("fd-close", handle)
+    let fd = handle_fd(handle)
+    close(fd)
+    set_handle_status(handle, handle_closed_status)
+
+    return o_void
+}
 
 
 // Primitives
@@ -3143,9 +3170,11 @@ function make_top_env(mode) {
     extend(sym("variable-set!"), primitive2("variable-set!", o_variable_set))
     
     extend(sym("handle?"),       primitive1("handle?",        o_is_handle))
+    // fd-open-output,
     extend(sym("fd-open-input"), primitive12("fd-open-input", o_fd_open_input))
+    extend(sym("fd-close"),      primitive1("fd-close",       o_fd_close))
 
-    // fd-open-output, fd-open-close, fd-read, fd-write
+    // fd-open-close, fd-read, fd-write
     // eof, fd-terminal?, cleanable-file, cleanable-cancel
 
     extend(sym("stat"),          primitive123("stat",       o_stat))
@@ -4089,5 +4118,6 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(hash-ref (runtime-env) \'env)'))))
 
 js_display(format(kernel_eval(parse1(
-    '(fd-open-input "README.md")'))))
+    '(let ([fd (fd-open-input "README.md")]) (begin (fd-close fd) fd))'))))
+
 

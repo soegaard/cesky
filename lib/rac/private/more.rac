@@ -29,17 +29,17 @@
          path->complete-path
 
          ls*
-         mkdir-p
-         rm*
-         cp*
+         ; mkdir-p
+         ; rm*
+         ; cp*
 
          :no-replace-mode
          :error :truncate :must-truncate :append :update :can-update
 
-         display
-         displayln
-         file->string
-         display-to-file
+         ;display
+         ;displayln
+         ;file->string
+         ;display-to-file
 
          string<?
          string->integer
@@ -47,8 +47,9 @@
          string-join
          string-trim
 
-         find-executable-path
-         system-type)
+         ;find-executable-path
+         ;system-type
+         )
 
 (define (void? v) (eq? v (void)))
 
@@ -267,7 +268,7 @@
       (when (car l) (mkdir-p (car l)))
       (mkdir p))))
 
-(define (rm* p)
+#;(define (rm* p)
   (unless (path-string? p) (arg-error 'rm* "path string" p))
   (define info (stat p #f))
   (when info
@@ -281,7 +282,7 @@
                  (ls p))
        (rmdir p)])))
 
-(define (cp* src dest [options (hash)])
+#;(define (cp* src dest [options (hash)])
   (unless (path-string? src) (arg-error 'cp* "path string" src))
   (unless (path-string? dest) (arg-error 'cp* "path string" dest))
   (unless (hash? options) (arg-error 'cp* "hash table" options))
@@ -356,7 +357,8 @@
                           (let ([n (+ (* n 10) (- c 48))])
                             (if (< n 0)
                                 ;; overflow has one edge care where it's ok
-                                (and neg? (= (+ i 1) (string-length s)) (= n -9223372036854775808) n)
+                                (and neg? (= (+ i 1) (string-length s))
+                                     (= n -9223372036854775808) n)
                                 (string->integer n (+ i 1))))]
                          [else #f]))])))))))
 

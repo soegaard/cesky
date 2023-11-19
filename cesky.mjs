@@ -3094,7 +3094,14 @@ function o_ls(dir_path) {
     dir.closeSync()
     return first
 }
-
+function o_mkdir(dir_path) {
+    const who = "mkdir"
+    check_path_string(who, dir_path)
+    let dir_path_str = string_string(dir_path)
+    try           { fs.mkdirSync(dir_path_str) }
+    catch (errno) { fail1w_errno(who, "failed", dir_path, errno) }
+    return o_void
+}
 
 // Primitives
 function primitive0(name, proc)       { return register_primitive(name, proc, dispatch0,   1<<0)}
@@ -3246,8 +3253,9 @@ function make_top_env(mode) {
 
     extend(sym("stat"),          primitive123("stat",       o_stat))
     extend(sym("ls"),            primitive1("ls",           o_ls))
-
-    // rm, mv, mkdir, rmdir, symlink, readlink, cp,
+    // rm, mv,
+    extend(sym("mkdir"),         primitive1("mkdir",        o_mkdir))
+    // rmdir, symlink, readlink, cp,
 
     extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
     extend(sym("current-time"), primitive0("current-time",   o_current_time))
@@ -4178,8 +4186,8 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(module->hash "lib/rac/base.rac")'))))
 
 
-// js_display(format(kernel_eval(parse1(
-//    '(hash-keys (module->hash "tests/equal.rac"))'))))
+ js_display(format(kernel_eval(parse1(
+    '(hash-keys (module->hash "tests/equal.rac"))'))))
 
 
 //js_display(format(kernel_eval(parse1(
@@ -4188,7 +4196,7 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //js_display(format(kernel_eval(parse1(
 //    '(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
 
-js_display(format(kernel_eval(parse1(
-    '(ls "foobar")'))))
+//js_display(format(kernel_eval(parse1(
+//    '(ls "foobar")'))))
 
 

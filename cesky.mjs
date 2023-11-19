@@ -3067,7 +3067,33 @@ function drain(fd,amount) {
     } else
         throw new Error("internal error: implement this case")
 }
+function o_ls(dir_path) {
+    const who = "ls"
+    check_path_string(who, dir_path)
 
+    let dirent
+    let first = o_null
+    let last = undefined
+    let pr
+
+    const dir_path_str = string_string(dir_path)
+    let dir 
+    try       { dir = fs.opendirSync(dir_path_str) }
+    catch (e) { fail1w_errno(who, "failed", dir_path, e) }
+
+    let dir_entry = dir.readSync()
+    while (dir_entry !== null) {
+        pr = o_cons(make_string(dir_entry.name), o_null)
+        if (last === undefined)
+            first = pr
+        else
+            set_cdr(last, pr)
+        last = pr
+        dir_entry = dir.readSync()
+    }
+    dir.closeSync()
+    return first
+}
 
 
 // Primitives
@@ -3219,8 +3245,9 @@ function make_top_env(mode) {
     // fd-terminal?, cleanable-file, cleanable-cancel
 
     extend(sym("stat"),          primitive123("stat",       o_stat))
+    extend(sym("ls"),            primitive1("ls",           o_ls))
 
-    // ls, rm, mv, mkdir, rmdir, symlink, readlink, cp,
+    // rm, mv, mkdir, rmdir, symlink, readlink, cp,
 
     extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
     extend(sym("current-time"), primitive0("current-time",   o_current_time))
@@ -4151,14 +4178,17 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //    '(module->hash "lib/rac/base.rac")'))))
 
 
-//js_display(format(kernel_eval(parse1(
+// js_display(format(kernel_eval(parse1(
 //    '(hash-keys (module->hash "tests/equal.rac"))'))))
 
 
 //js_display(format(kernel_eval(parse1(
 //    '(hash-ref (runtime-env) \'env)'))))
 
+//js_display(format(kernel_eval(parse1(
+//    '(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
+
 js_display(format(kernel_eval(parse1(
-    '(let ([fd (fd-open-input "README.md")]) (fd-read fd eof))'))))
+    '(ls "foobar")'))))
 
 

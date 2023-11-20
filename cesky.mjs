@@ -3270,22 +3270,12 @@ function o_process(command_and_args) {
     // Now in_r  holds the file descriptor to use as stdin for the child process.
     // If redirect_in is true, then a pipe is created.
     
-    command_str = string_string(command)    
-    let spawn_options = {stdio: [in_r, out_w, err_w]}
-    let cp = child_process.spawn(command_str, argv, spawn_options)
 
-    // cp is a ChildProcess (use the .on method to attach event handlers)
-    let pid = cp.pid    
-    let result_handle = make_handle(pid, handle_proces_running_status)
-    
-    let result = o_hash(list(sym("process"), result_handle))
-
-    /* 
     opt = consume_option(options_box, "stdout")
     if (opt !== o_undefined) {
-        if (opt === symb("pipe")) {
+        if (opt === sym("pipe")) {
             redirect_out = true
-            pipe(&out, &out_w) // todo
+            out_w = "pipe"
         } else if (is_handle(opt) && (handle_status(opt) === handle_open_fd_out_status)) {
             out_w = handle_fd(opt)
         } else
@@ -3293,162 +3283,60 @@ function o_process(command_and_args) {
     }
 
     opt = consume_option(options_box, "stderr")
-    if (opt != o_undefined) {
-        if (opt === symb("pipe")) {
+    if (opt !== o_undefined) {
+        if (opt === sym("pipe")) {
             redirect_err = true
-            pipe(&err, &err_w) // todo
+            err_w = "pipe"
         } else if (is_handle(opt) && (handle_status(opt) === handle_open_fd_out_status)) {
             err_w = handle_fd(opt)
         } else
             fail1w(who, "not 'pipe or an open output file descriptor", opt)
     }
 
-    dir = consume_option(options_box, "dir");
+    
+    let dir = consume_option(options_box, "dir");
     if (dir !== o_undefined)
         check_path_string(who, dir)
 
-    opt = consume_option(options_box, "env")
-    if (opt !== o_undefined) {
-        let l
-        for (l = opt; is_pair(l); l = cdr(l)) {
-            let a = car(l)
-
-            if (!is_pair(a)) break
-            let name = car(a)
-            if (!is_string(name)) break
-            for (i = name.length; i--; ) {
-                int c = ZUO_STRING_PTR(name)[i];
-                if ((c == '=') || (c == 0)) break;
-            }
-            if (i >= 0) break;
-
-            val = cdr(a);
-            if (!is_string(val)) break
-        }
-        if (l !== o_null)
-            fail_arg(who, "valid environment variables list", opt)
-        env = envvars_block(who, opt)
-    } else
-        env = NULL;
     
+    command_str = string_string(command)    
+    let spawn_options = {stdio: [in_r, out_w, err_w]}
+    if (dir !== o_undefined)
+        spawn_options.cwd = dir
+    
+    let cp = child_process.spawn(command_str, argv, spawn_options)
 
-    opt = consume_option(options_box, "cleanable?")
-    if (opt === o_false)
-        no_wait = true
-    else
-        no_wait = false
+    // cp is a ChildProcess (use the .on method to attach event handlers)
+    let pid = cp.pid    
+    let result_handle = make_handle(pid, handle_proces_running_status)
+    
+    let result = o_hash(list(sym("process"), result_handle))
+    
+    /* 
+       options were are not handling
+       'env
+       'cleanable
+       'exec?
 
-    opt = consume_option(options_box, "exec?")
-    as_child = ((opt === o_false) || (opt === o_undefined))
+       check_options_consumed(who, options)
+    */
 
-    opt = consume_option(options_box, "exact?");
-    if ((opt === o_false) || (opt == o_undefined))
-        exact_cmdline = false
-    else {
-        exact_cmdline = true
-        if (argc !== 2)
-            fail1w(who, "too many arguments for 'exact? mode", opt)
-    }
-    if (exact_cmdline)
-        fail1w(who, "'exact? mode not suported", opt)
+    result = make_empty_trie()
+    result = o_hash_set(result, sym("process"), result_handle)
 
-    check_options_consumed(who, options)
-
-    let open_fds = zuo_trie_keys(o_fd_table, o_null)
-
-    zuo_suspend_signal()
-
-    if (as_child)
-        pid = fork()
-    else {
-        zuo_clean_all(0)
-        pid = 0;
-    }
-
-    if (pid > 0) {
-        // This is the original process, which needs to manage the newly created child process. 
-        ok = 1;
-    } else if (pid == 0) {
-        // This is the new child process 
-        char *msg;
-
-        zuo_resume_signal();
-
-        if (in_r != 0) {
-            EINTR_RETRY(dup2(in_r, 0));
-            if (redirect_in)
-                EINTR_RETRY(close(in));
-        }
-        if (out_w != 1) {
-            EINTR_RETRY(dup2(out_w, 1));
-            if (redirect_out)
-                EINTR_RETRY(close(out));
-        }
-        if (err_w != 2) {
-            EINTR_RETRY(dup2(err_w, 2));
-            if (redirect_err)
-                EINTR_RETRY(close(err));
-        }
-
-        while (open_fds != z.o_null) {
-            EINTR_RETRY(close(ZUO_HANDLE_RAW(_zuo_car(open_fds))));
-            open_fds = _zuo_cdr(open_fds);
-        }
-
-        if ((dir == z.o_undefined)
-            || (chdir(ZUO_STRING_PTR(dir)) == 0)) {
-            if (env == NULL)
-                execv(argv[0], argv);
-            else
-                execve(argv[0], argv, env);
-            msg = "exec failed\n";
-        } else
-            msg = "chdir failed\n";
-
-        EINTR_RETRY(write(2, msg, strlen(msg)));
-
-        _exit(1);
-    } else {
-        ok = 0;
-    }
-
-
-    if (ok) {
-        p_handle = zuo_handle(pid, zuo_handle_process_running_status);
-        int added = 0;
-        Z.o_pid_table = trie_extend(Z.o_pid_table, pid, p_handle, p_handle, &added);
-        if (!no_wait)
-            zuo_register_cleanable(p_handle, p_handle);
-    }
-
-    zuo_resume_signal();
-
-    if (!ok)
-        zuo_fail("exec failed");
-
-    if (env != NULL)
-        free(env);
-
+    // TODO: When using pipes, we ought to get the pid for the
+    //       pipes and put them in the result hash table.
+    
+    /*
     if (redirect_in)
-        zuo_close(in_r);
+        result = o_hash_set(result, sym("stdin"), 
+                              zuo_fd_handle(in, zuo_handle_open_fd_out_status, 1));
     if (redirect_out)
-        zuo_close(out_w);
+        result = zuo_hash_set(result, zuo_symbol("stdout"),
+                              zuo_fd_handle(out, zuo_handle_open_fd_in_status, 1));
     if (redirect_err)
-        zuo_close(err_w);
-
-    for (i = 0; i < argc; i++)
-        free(argv[i]);
-    free(argv);
-
-    result = z.o_empty_hash;
-    result = zuo_hash_set(result, zuo_symbol("process"), p_handle);
-    if (redirect_in)
-        result = zuo_hash_set(result, zuo_symbol("stdin"), zuo_fd_handle(in, zuo_handle_open_fd_out_status, 1));
-    if (redirect_out)
-        result = zuo_hash_set(result, zuo_symbol("stdout"), zuo_fd_handle(out, zuo_handle_open_fd_in_status, 1));
-    if (redirect_err)
-        result = zuo_hash_set(result, zuo_symbol("stderr"), zuo_fd_handle(err, zuo_handle_open_fd_in_status, 1));
-
+        result = zuo_hash_set(result, zuo_symbol("stderr"),
+                              zuo_fd_handle(err, zuo_handle_open_fd_in_status, 1));
     */
     
     return result
@@ -4555,7 +4443,8 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 
 js_display(format(kernel_eval(parse1('\
 (let ([fd (fd-open-input "foo")])\
-  (process "/bin/cat" (hash \'stdin fd)))'))))
+  (let ([fd2 (fd-open-output "bar")])\
+    (process "/bin/cat" (hash \'stdin fd \'stdout fd2))))'))))
 
 
 

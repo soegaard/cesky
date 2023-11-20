@@ -2,6 +2,7 @@
 
 // TODO SHORT TERM
 //  [ ] get harness to run
+//  [ ] implement hash_remove and use it in consume_option
 //  [ ] fix o_error
 //  [x] fix bug in hash-count (or hash_extend)
 //  [x] track down the datum->syntax undefined error
@@ -27,10 +28,11 @@
 // Linting
 //   npx eslint cesky.mjs
 
-import util      from 'node:util'
-import * as fs   from 'node:fs'      // for readFileSync()
-import * as os   from 'node:os'      // for platform()
-import * as path from 'node:path'    // for isAbsolute()
+import util               from 'node:util'
+import * as fs            from 'node:fs'             // for readFileSync()
+import * as os            from 'node:os'             // for platform()
+import * as path          from 'node:path'           // for isAbsolute()
+import * as child_process from 'node:child_process'  // 
 import { cwd, stdin, stdout, stderr }  from 'node:process'
 
 
@@ -405,7 +407,7 @@ function o_append(os) {
             a = o_cdr(a)
         }
         if (a !== o_null)
-            error_arg("append", "list",o_car(l))
+            error_arg("append", "list", o_car(l))
         l = o_cdr(l)
     }
     if (tag(l) === pair_tag) {
@@ -420,8 +422,8 @@ function o_append(os) {
 
 
 // NUMBERS
-function make_number(x)      { return [number_tag, x] }
-function number_value(o)     { return o[1] }
+function make_number(x)  { return [number_tag, x] }
+function number_value(o) { return o[1] }
 
 function is_number(o)    { return              Array.isArray(o) && (tag(o) === number_tag)  }
 function o_is_number(o)  { return make_boolean(Array.isArray(o) && (tag(o) === number_tag)) }
@@ -2915,7 +2917,7 @@ function o_current_time() {
 }
 
 //
-// FILES / STREAMS
+// OPTIONS AS HASH TABLES
 //
 
 
@@ -2923,8 +2925,9 @@ function consume_option(options_box, name) {
   let s = sym(name)
   let opt = o_trie_lookup(options_box[0], s)
 
-  if (opt !== o_undefined)
-      options_box[0] = hash_remove(options_box[0], s)
+    //if (opt !== o_undefined)
+    //  options_box[0] = hash_remove(options_box[0], s)
+    // TODO: implement hash_remove and use it in consume_option
 
   return opt
 }
@@ -2936,8 +2939,9 @@ function check_options_consumed(who, options) {
     }
 }
 
-
-
+//
+// FILES / STREAMS
+//
 
 // constants from stat.h
 const S_IFMT  = 61440  // octal: 0170000 
@@ -3093,8 +3097,6 @@ function o_fd_open_output(path, options) {
         return make_handle(fd, handle_open_fd_out_status)
     }
 }
-
-
 function close(fd) {
     fs.closeSync(fd)
 }
@@ -3189,7 +3191,274 @@ function o_mkdir(dir_path) {
     return o_void
 }
 
-// Primitives
+//
+// PROCESSES
+//
+
+function o_process(command_and_args) {
+    const who = "process"
+    let command  = car(command_and_args)
+    let args     = cdr(command_and_args)
+    let rev_args = o_null
+    let options  = make_empty_trie()
+
+    let argc = 1
+    let can_options = true
+    
+    check_path_string(who, command)
+
+    // args = string-tree ... [options]
+    // - flatten the string trees into rev_args (in reverse order)
+    // - argc counts the number of arguments
+    for (let l = args; is_pair(l); l = cdr(l)) {
+        let a = car(l)
+        if (a === o_null) {
+            /* skip */
+        } else if (is_pair(l) && is_list(a)) {
+            /* splice list */
+            if (set_cdr(l, o_null))
+                can_options = false
+            l = o_cons(a, o_append(o_cons(a, o_cons(cdr(l), o_null))))
+        } else if (!is_string(a)) {
+            if (can_options && cdr(l) === o_null) {
+                options = a
+                if (!is_trie(options))
+                    fail_arg(who, "string, list, or hash table", options)
+            } else {
+                fail_arg(who, "string or list", a)
+            }
+        } else {
+            rev_args = o_cons(a, rev_args)
+            argc++
+        }
+    }
+
+    // Notes: uses child_process.spawn(command,args, options)
+    //        where options contain `stdio` to pipe streams.
+
+    // Add ./ to command if there is no path.
+    let command_str = string_string(command)
+    if ( !path_is_absolute(command_str)   &&   (car(o_split_path(command)) === o_false))
+        command = o_build_raw_path2(make_string("."), command)
+
+    // Put the arguments from rev_args into an array argv.
+    let argv = []
+    for (let i = argc; i-- > 1; ) {
+        argv[i-1] = string_string(car(rev_args))
+        rev_args = cdr(rev_args)
+    }
+
+    let in_r  = process.stdin.fd
+    let out_w = process.stdout.fd
+    let err_w = process.stderr.fd
+
+    let redirect_in  = false
+    let redirect_out = false
+    let redirect_err = false
+
+    let options_box = [options]
+    let opt = consume_option(options_box, "stdin")
+    if (opt !== o_undefined) {
+        if (opt === sym("pipe")) {
+            redirect_in = true
+            in_r = "pipe"
+        } else if (is_handle(opt) && (handle_status(opt) === handle_open_fd_in_status)) {
+            in_r = handle_fd(opt)
+        } else
+            fail1w(who, "not 'pipe or an open input file descriptor", opt)
+    }
+    // Now in_r  holds the file descriptor to use as stdin for the child process.
+    // If redirect_in is true, then a pipe is created.
+    
+    command_str = string_string(command)    
+    let spawn_options = {stdio: [in_r, out_w, err_w]}
+    let cp = child_process.spawn(command_str, argv, spawn_options)
+
+    // cp is a ChildProcess (use the .on method to attach event handlers)
+    let pid = cp.pid    
+    let result_handle = make_handle(pid, handle_proces_running_status)
+    
+    let result = o_hash(list(sym("process"), result_handle))
+
+    /* 
+    opt = consume_option(options_box, "stdout")
+    if (opt !== o_undefined) {
+        if (opt === symb("pipe")) {
+            redirect_out = true
+            pipe(&out, &out_w) // todo
+        } else if (is_handle(opt) && (handle_status(opt) === handle_open_fd_out_status)) {
+            out_w = handle_fd(opt)
+        } else
+            fail1w(who, "not 'pipe or an open output file descriptor", opt)
+    }
+
+    opt = consume_option(options_box, "stderr")
+    if (opt != o_undefined) {
+        if (opt === symb("pipe")) {
+            redirect_err = true
+            pipe(&err, &err_w) // todo
+        } else if (is_handle(opt) && (handle_status(opt) === handle_open_fd_out_status)) {
+            err_w = handle_fd(opt)
+        } else
+            fail1w(who, "not 'pipe or an open output file descriptor", opt)
+    }
+
+    dir = consume_option(options_box, "dir");
+    if (dir !== o_undefined)
+        check_path_string(who, dir)
+
+    opt = consume_option(options_box, "env")
+    if (opt !== o_undefined) {
+        let l
+        for (l = opt; is_pair(l); l = cdr(l)) {
+            let a = car(l)
+
+            if (!is_pair(a)) break
+            let name = car(a)
+            if (!is_string(name)) break
+            for (i = name.length; i--; ) {
+                int c = ZUO_STRING_PTR(name)[i];
+                if ((c == '=') || (c == 0)) break;
+            }
+            if (i >= 0) break;
+
+            val = cdr(a);
+            if (!is_string(val)) break
+        }
+        if (l !== o_null)
+            fail_arg(who, "valid environment variables list", opt)
+        env = envvars_block(who, opt)
+    } else
+        env = NULL;
+    
+
+    opt = consume_option(options_box, "cleanable?")
+    if (opt === o_false)
+        no_wait = true
+    else
+        no_wait = false
+
+    opt = consume_option(options_box, "exec?")
+    as_child = ((opt === o_false) || (opt === o_undefined))
+
+    opt = consume_option(options_box, "exact?");
+    if ((opt === o_false) || (opt == o_undefined))
+        exact_cmdline = false
+    else {
+        exact_cmdline = true
+        if (argc !== 2)
+            fail1w(who, "too many arguments for 'exact? mode", opt)
+    }
+    if (exact_cmdline)
+        fail1w(who, "'exact? mode not suported", opt)
+
+    check_options_consumed(who, options)
+
+    let open_fds = zuo_trie_keys(o_fd_table, o_null)
+
+    zuo_suspend_signal()
+
+    if (as_child)
+        pid = fork()
+    else {
+        zuo_clean_all(0)
+        pid = 0;
+    }
+
+    if (pid > 0) {
+        // This is the original process, which needs to manage the newly created child process. 
+        ok = 1;
+    } else if (pid == 0) {
+        // This is the new child process 
+        char *msg;
+
+        zuo_resume_signal();
+
+        if (in_r != 0) {
+            EINTR_RETRY(dup2(in_r, 0));
+            if (redirect_in)
+                EINTR_RETRY(close(in));
+        }
+        if (out_w != 1) {
+            EINTR_RETRY(dup2(out_w, 1));
+            if (redirect_out)
+                EINTR_RETRY(close(out));
+        }
+        if (err_w != 2) {
+            EINTR_RETRY(dup2(err_w, 2));
+            if (redirect_err)
+                EINTR_RETRY(close(err));
+        }
+
+        while (open_fds != z.o_null) {
+            EINTR_RETRY(close(ZUO_HANDLE_RAW(_zuo_car(open_fds))));
+            open_fds = _zuo_cdr(open_fds);
+        }
+
+        if ((dir == z.o_undefined)
+            || (chdir(ZUO_STRING_PTR(dir)) == 0)) {
+            if (env == NULL)
+                execv(argv[0], argv);
+            else
+                execve(argv[0], argv, env);
+            msg = "exec failed\n";
+        } else
+            msg = "chdir failed\n";
+
+        EINTR_RETRY(write(2, msg, strlen(msg)));
+
+        _exit(1);
+    } else {
+        ok = 0;
+    }
+
+
+    if (ok) {
+        p_handle = zuo_handle(pid, zuo_handle_process_running_status);
+        int added = 0;
+        Z.o_pid_table = trie_extend(Z.o_pid_table, pid, p_handle, p_handle, &added);
+        if (!no_wait)
+            zuo_register_cleanable(p_handle, p_handle);
+    }
+
+    zuo_resume_signal();
+
+    if (!ok)
+        zuo_fail("exec failed");
+
+    if (env != NULL)
+        free(env);
+
+    if (redirect_in)
+        zuo_close(in_r);
+    if (redirect_out)
+        zuo_close(out_w);
+    if (redirect_err)
+        zuo_close(err_w);
+
+    for (i = 0; i < argc; i++)
+        free(argv[i]);
+    free(argv);
+
+    result = z.o_empty_hash;
+    result = zuo_hash_set(result, zuo_symbol("process"), p_handle);
+    if (redirect_in)
+        result = zuo_hash_set(result, zuo_symbol("stdin"), zuo_fd_handle(in, zuo_handle_open_fd_out_status, 1));
+    if (redirect_out)
+        result = zuo_hash_set(result, zuo_symbol("stdout"), zuo_fd_handle(out, zuo_handle_open_fd_in_status, 1));
+    if (redirect_err)
+        result = zuo_hash_set(result, zuo_symbol("stderr"), zuo_fd_handle(err, zuo_handle_open_fd_in_status, 1));
+
+    */
+    
+    return result
+}
+
+
+//
+// PRIMITIVES
+//
+
 function primitive0(name, proc)       { return register_primitive(name, proc, dispatch0,   1<<0)}
 function primitive1(name, proc)       { return register_primitive(name, proc, dispatch1,   1<<1)}
 function primitive2(name, proc)       { return register_primitive(name, proc, dispatch2,   1<<2)}
@@ -3344,10 +3613,12 @@ function make_top_env(mode) {
     extend(sym("mkdir"),         primitive1("mkdir",        o_mkdir))
     // rmdir, symlink, readlink, cp,
 
-    extend(sym("runtime-env"),  primitive0("runtime-env",    o_runtime_env))
-    extend(sym("current-time"), primitive0("current-time",   o_current_time))
+    extend(sym("runtime-env"),   primitive0("runtime-env",    o_runtime_env))
+    extend(sym("current-time"),  primitive0("current-time",   o_current_time))
 
-    // process, process-read, process-wait, string->shell, shell->strings
+    extend(sym("process"),       primitiven("process",        o_process, -2))
+
+    // process-read, process-wait, string->shell, shell->strings
     
     extend(sym("string-read"), primitive123("string-read", o_string_read))
     extend(sym("~v"),           primitiven("~v",           o_tilde_v, -1))
@@ -4277,10 +4548,17 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 //js_display(format(kernel_eval(parse1('(ls "foobar")'))))
 // js_display(format(kernel_eval(parse1('(mkdir "foobar")'))))
 
+// js_display(format(kernel_eval(parse1('(let ([fd (fd-open-output "test.md")]) (fd-write fd "hello"))'))))
+
+
 // js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 
+js_display(format(kernel_eval(parse1('\
+(let ([fd (fd-open-input "foo")])\
+  (process "/bin/cat" (hash \'stdin fd)))'))))
 
-js_display(format(kernel_eval(parse1('(let ([fd (fd-open-output "test.md")]) (fd-write fd "hello"))'))))
+
+
 
 
 

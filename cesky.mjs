@@ -1,5 +1,6 @@
 // CEK-interpreter in ES6 JavaScript
-
+// [ ] string-split:     currently filters out empty strings in result
+// [ ] string->integer:  find max and min int and rewrite tests
 // TODO SHORT TERM
 //  [ ] get harness to run
 //  [ ] implement hash_remove and use it in consume_option
@@ -65,9 +66,9 @@ const variable_tag           = Symbol("variable")
 const opaque_tag             = Symbol("opaque")
 const handle_tag             = Symbol("handle")
 
-const null_tag               = Symbol("null")       // These names are useful for debugging,
-const void_tag               = Symbol("void")       // although they could be made singletons.
-const singleton_tag          = Symbol("singleton")  // o_apply, o_callcc
+const null_tag               = Symbol("null")      // These names are useful for debugging,
+const void_tag               = Symbol("void")      // although they could be made singletons.
+const singleton_tag          = Symbol("singleton") // o_apply, o_callcc
 
 function tag(o) { return o[0] }
 
@@ -79,11 +80,11 @@ function is_boolean(o) { return Array.isArray(o) && (tag(o) === boolean_tag) }
 function make_boolean(b) { return ( b === false ? o_false  : o_true ) }
 
 // STRINGS
-function make_string(str)   { return [string_tag, str] }
-function string_string(o)   { return o[1] }
+function make_string(str) { return [string_tag, str] }
+function string_string(o) { return o[1] }
 
-function is_string(o)       { return              Array.isArray(o) && (tag(o) === string_tag)  }
-function o_is_string(o)     { return make_boolean(Array.isArray(o) && (tag(o) === string_tag)) }
+function is_string(o)   { return              Array.isArray(o) && (tag(o) === string_tag) }
+function o_is_string(o) { return make_boolean(Array.isArray(o) && (tag(o) === string_tag))}
 
 function string_length(o)   { return             string_string(o).length }
 function o_string_length(o) { return make_number(string_string(o).length) }
@@ -106,7 +107,8 @@ function o_substring(o,start,end) {
     else {
         let j = check_substring_index(who,o,end)
         if (j<i)
-            fail( who + ": ending index is smaller than start index, got: " + i + " and " + j)
+            fail(who +
+                 ": ending index is smaller than start index, got: " + i + " and " + j)
         return make_string(string_string(o).substring(i,j))
     }    
 }
@@ -132,10 +134,16 @@ function o_string_split(o1,o2) {
     let who = "string-split"
     check_string(who,o1)
     if ((o2 === o_undefined) || (o2 === undefined))
-        return array_to_list(string_string(o1).split(" ").filter((x) => x !== "").map(make_string))
+        return array_to_list(string_string(o1)
+                             .split(" ")
+                             .filter((x) => x !== "")
+                             .map(make_string))
     else {
         check_string(who,o2)
-        return array_to_list( string_string(o1).split(string_string(o2)).filter((x) => x !== "").map(make_string))
+        return array_to_list( string_string(o1)
+                              .split(string_string(o2))
+                              .filter((x) => x !== "")
+                              .map(make_string))
     }
 }
     
@@ -247,8 +255,9 @@ function variable_name(o)        { return o[1] }
 function variable_value(o)       { return o[2] }
 function set_variable_value(o,v) { o[2]=v }
 
-function is_variable(o)   { return              Array.isArray(o) && (tag(o) === variable_tag)  }
-function o_is_variable(o) { return make_boolean(Array.isArray(o) && (tag(o) === variable_tag)) }
+function is_variable(o)   { return Array.isArray(o) && (tag(o) === variable_tag)  }
+function o_is_variable(o) { return make_boolean(Array.isArray(o)
+                                                && (tag(o) === variable_tag)) }
 
 function o_variable_set(o, val) {
     if (!is_variable(o))
@@ -495,9 +504,13 @@ function o_div(ns) {
     }
     return make_number(i)
 }
-function o_modulo(o1, o2)    { check_numbers("modulo",    o1, o2) ; return make_number( ((o1[1] % o2[1]) + o2[1]) % o2[1]) }
-function o_remainder(o1, o2) { check_numbers("remainder", o1, o2) ; return make_number(o1[1] % o2[1]) }
-function o_quotient(o1, o2)  { check_numbers("quotient",  o1, o2) ; return make_number(Math.floor(o1[1] / o2[1])) }
+function o_modulo(o1, o2)    { check_numbers("modulo",    o1, o2) ;
+                               return make_number( ((o1[1] % o2[1]) + o2[1]) % o2[1]) }
+function o_remainder(o1, o2) { check_numbers("remainder", o1, o2) ;
+                               return make_number(o1[1] % o2[1]) }
+function o_quotient(o1, o2)  { check_numbers("quotient",  o1, o2) ;
+                               let q = o1[1] / o2[1]
+                               return make_number(q > 0 ?  Math.floor(q) : Math.ceil(q)) }
 
 
 function o_is_zero(o)    { return make_boolean( is_number(o) && number_value(o) == 0 ) }
@@ -710,7 +723,7 @@ function trie_is_keys_subset(trie1_in, trie2_in) {
     else {
         let trie1 = trie1_in;
         let trie2 = trie2_in;
-        let i =0
+        let i = 0
 
         if (trie_count(trie1) > trie_count(trie2))
             return false
@@ -890,25 +903,31 @@ function o_opaque_ref(key, obj, defval) {
 
 // HANDLE
 
-const handle_open_fd_in_status     = Symbol("handle-open-fd-in-status")
-const handle_open_fd_out_status    = Symbol("handle-open-fd-out-status")
-const handle_closed_status         = Symbol("handle-closed-status")
-const handle_proces_running_status = Symbol("handle-process-running-status")
-const handle_proces_done_status    = Symbol("handle-process-done-status")
-const handle_cleanable_status      = Symbol("handle-cleanable-status")
+const handle_open_fd_in_status      = Symbol("handle-open-fd-in-status")
+const handle_open_fd_out_status     = Symbol("handle-open-fd-out-status")
+const handle_closed_status          = Symbol("handle-closed-status")
+const handle_process_running_status = Symbol("handle-process-running-status")
+const handle_process_done_status    = Symbol("handle-process-done-status")
+const handle_cleanable_status       = Symbol("handle-cleanable-status")
 
 let handle_id_counter = 0
 
-function make_handle(fd,status)  { return [handle_tag, handle_id_counter++, fd, status] }
-function handle_id(o)            { return o[1] }
-function handle_fd(o)            { return o[2] } // union
-function handle_result(o)        { return o[2] } // union
-function handle_status(o)        { return o[3] }
-function set_handle_status(o, s) { o[3] = s }
+function make_handle(fd,status,data)  { return [handle_tag, handle_id_counter++, fd, status, data] }
+function handle_id(o)                 { return o[1] }
+function handle_fd(o)                 { return o[2] } // union
+function handle_pid(o)                { return o[2] } // union
+function handle_result(o)             { return o[2] } // union
+function handle_status(o)             { return o[3] }
+function handle_data(o)               { return o[4] } // data is a ChildProcess for processes
+function set_handle_status(o, s)      { o[3] = s }
 
-function is_handle(o)   { return              Array.isArray(o) && (tag(o) === handle_tag)  }
-function o_is_handle(o) { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
 
+function is_handle(o)         { return              Array.isArray(o) && (tag(o) === handle_tag)  }
+function o_is_handle(o)       { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
+function is_process_handle(o) { return Array.isArray(o)
+                                && (tag(o) === handle_tag)
+                                && ( (handle_status(o) === handle_process_running_status)
+                                     || (handle_status(o) === handle_process_done_status) ) }
 
 // MODULES
 
@@ -941,14 +960,16 @@ function is_path_string(o) {
     check_string(who, o)
     const s = string_string(o)
     if (s === "")
-        return o_false
+        return false
     if (/[\0]/.test(s))
         return false
     return true
 }
 
 function o_is_path_string(o) {
-    return !is_path_string(o) ? o_false : o_true
+    if (is_string(o))
+        return !is_path_string(o) ? o_false : o_true
+    return o_false
 }
 
 function path_is_absolute(p) {
@@ -1928,6 +1949,20 @@ function lex_symbol(sp) {
     return sym(cs.join(""))
 }
 
+function is_octal(c) { return ("0" <= c) && (c <= "7") }
+
+function read_octal(sp) {
+    let octals = []
+    let i = 0
+    let p = peek_char(sp)
+    while (is_octal(p)) {
+        octals[i++] = p
+        read_char(sp)
+        p = peek_char(sp)
+    }    
+    return String.fromCharCode(parseInt(octals.join(""), 8))
+}
+
 function lex_string(sp) {
     read_char(sp) // the "
     let cs = []
@@ -1938,12 +1973,13 @@ function lex_string(sp) {
             break
         if (c === "\\") {
             let p = peek_char(sp)
-            if      (p === "t")  { read_char(sp); cs[i++] = "\t" }
-            else if (p === "n" ) { read_char(sp); cs[i++] = "\n" }
-            else if (p === "\\") { read_char(sp); cs[i++] = "\\" }
-            else if (p === EOF)  { throw new Error(
+            if      (p === "t")   { read_char(sp); cs[i++] = "\t" }
+            else if (p === "n" )  { read_char(sp); cs[i++] = "\n" }
+            else if (p === "\\")  { read_char(sp); cs[i++] = "\\" }
+            else if (is_octal(p)) { cs[i++] = read_octal(sp) }
+            else if (p === EOF)   { throw new Error(
                 "read: end-of-file object occurred while reading a string") }
-            else                 { read_char(sp); cs[i++] = p    }
+            else                  { read_char(sp); cs[i++] = p    }
         } else if (c === "\"") {
             return make_string(cs.join(""))
         } else {
@@ -2830,7 +2866,7 @@ function continue_step(s) {
 // Note: We can call kernel_eval from JavaScript to evaluate
 /// an expression in the kernel module.
 // But ... if a program calls kernel_eval, it must be done within
-// the exisiting interpreter loop, so o_kernel_eval is special cased
+// the existing interpreter loop, so o_kernel_eval is special cased
 // in `continue`.
 
 function kernel_eval(expr) {
@@ -3308,7 +3344,7 @@ function o_process(command_and_args) {
 
     // cp is a ChildProcess (use the .on method to attach event handlers)
     let pid = cp.pid    
-    let result_handle = make_handle(pid, handle_proces_running_status)
+    let result_handle = make_handle(pid, handle_process_running_status, cp)
     
     let result = o_hash(list(sym("process"), result_handle))
     
@@ -3341,20 +3377,71 @@ function o_process(command_and_args) {
     
     return result
 }
+async function o_process_wait(pids) {
+    js_display("> o_process_wait")
+    js_write(pids)
+    // check all pids_i are handles
+    for (let l = pids; l !== o_null; l = cdr(l)) {
+        let p = car(l)
+        if (!is_process_handle(p))
+            fail_arg("process-wait", "process handle", p)
+    }
+
+    // loop until one of the handles is marked as done
+    let done = false
+    while (!done) {
+        // if possible, find a done process and return it
+        for (let l = pids; l !== o_null; l = cdr(l)) {
+            let p = car(l)
+            if (handle_status(p) === handle_process_done_status)
+                return p
+        }
+        // we need to wait for a subprocess to finish:
+        //   - make a promise for each
+        let promises = []
+        let i = 0
+        for (let l = pids; l !== o_null; l = cdr(l)) {
+            let p = car(l)
+
+            promises[i] = new Promise( (resolve, reject) => {
+                let cp = handle_data(p)
+                cp.on("exit", (code, signal) => [p, code, signal])
+            })
+            i++
+        }
+        js_write("here")
+        
+        //  - wait until one of the promises are fulfilled
+        let any = Promise.any(promises).then((value) => {
+            js_display("process_wait")
+            js_write(value)
+            done = false
+            js_write("here3")
+        })
+
+        await any.then((value) => {
+            js_display("any done")
+            js_write(value)
+        })
+        js_write("here2")
+        // todo: update handle
+    }
+    return o_true
+}
 
 
 //
 // PRIMITIVES
 //
 
-function primitive0(name, proc)       { return register_primitive(name, proc, dispatch0,   1<<0)}
-function primitive1(name, proc)       { return register_primitive(name, proc, dispatch1,   1<<1)}
-function primitive2(name, proc)       { return register_primitive(name, proc, dispatch2,   1<<2)}
-function primitive3(name, proc)       { return register_primitive(name, proc, dispatch3,   1<<3)}
-function primitive12(name, proc)      { return register_primitive(name, proc, dispatch12, (1<<1)|(1<<2))}
-function primitive123(name, proc)     { return register_primitive(name, proc, dispatch123,(1<<1)|(1<<2)|(1<<3))}
-function primitive23(name, proc)      { return register_primitive(name, proc, dispatch23, (1<<2)|(1<<3))}
-function primitiven(name, proc, mask) { return register_primitive(name, proc, dispatchn,   mask)}
+function primitive0(name, proc)        { return register_primitive(name, proc, dispatch0,   1<<0)}
+function primitive1(name, proc)        { return register_primitive(name, proc, dispatch1,   1<<1)}
+function primitive2(name, proc)        { return register_primitive(name, proc, dispatch2,   1<<2)}
+function primitive3(name, proc)        { return register_primitive(name, proc, dispatch3,   1<<3)}
+function primitive12(name, proc)       { return register_primitive(name, proc, dispatch12, (1<<1)|(1<<2))}
+function primitive123(name, proc)      { return register_primitive(name, proc, dispatch123,(1<<1)|(1<<2)|(1<<3))}
+function primitive23(name, proc)       { return register_primitive(name, proc, dispatch23, (1<<2)|(1<<3))}
+function primitiven(name, proc, mask)  { return register_primitive(name, proc, dispatchn,   mask)}
 // mask  1+2 = 1 or 2 arguments
 // mask  1   exactly 1 argument
 // mask  0   no arguments
@@ -3444,7 +3531,7 @@ function make_top_env(mode) {
     extend(sym("string->symbol"), primitive1("string->symbol", o_string_to_symbol))
     extend(sym("string->uninterned-symbol"),
                                   primitive1("string->uninterned-symbol",
-                                                               o_string_to_uninterned_symbol))
+                                                             o_string_to_uninterned_symbol))
     // immutable hashes
     extend(sym("hash?"),        primitive1("hash?",        o_is_hash))
     extend(sym("hash"),         primitiven("hash",         o_hash, -1))
@@ -3453,7 +3540,7 @@ function make_top_env(mode) {
     extend(sym("hash-remove"),  primitive2("hash-remove",  o_hash_remove))
     extend(sym("hash-keys"),    primitive1("hash-keys",    o_hash_keys))
     extend(sym("hash-count"),   primitive1("hash-count",   o_hash_count))
-    extend(sym("hash-keys-subset?"), primitive2("hash-keys-subset?",  o_is_hash_keys_subset))
+    extend(sym("hash-keys-subset?"), primitive2("hash-keys-subset?", o_is_hash_keys_subset))
     
     
     extend(sym("eq?"),          primitive2("eq?",          o_is_eq))
@@ -3476,7 +3563,7 @@ function make_top_env(mode) {
     extend(sym("split-path"),        primitive1("split-path",        o_split_path))
     extend(sym("relative-path?"),    primitive1("relative-path?",    o_is_relative_path))
     extend(sym("module-path?"),      primitive1("module-path?",      o_is_module_path))
-    extend(sym("build-module-path"), primitive2("build-module-path", o_build_module_path)) // todo: test
+    extend(sym("build-module-path"), primitive2("build-module-path", o_build_module_path))
 
     extend(sym("variable?"),     primitive1("variable?",     o_is_variable))
     extend(sym("variable"),      primitive1("variable",      o_make_variable))
@@ -3505,8 +3592,9 @@ function make_top_env(mode) {
     extend(sym("current-time"),  primitive0("current-time",   o_current_time))
 
     extend(sym("process"),       primitiven("process",        o_process, -2))
-
-    // process-read, process-wait, string->shell, shell->strings
+    // process-read,
+    extend(sym("process-wait"),  primitiven("process-wait",  o_process_wait, -2))
+    //string->shell, shell->strings
     
     extend(sym("string-read"), primitive123("string-read", o_string_read))
     extend(sym("~v"),           primitiven("~v",           o_tilde_v, -1))
@@ -4439,15 +4527,35 @@ t("(hash-keys-subset? (hash 'a 1 'b 1 'c 3) (hash 'a 2 'b 3 'c 5))")
 // js_display(format(kernel_eval(parse1('(let ([fd (fd-open-output "test.md")]) (fd-write fd "hello"))'))))
 
 
-// js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 
+
+
+
+/*
 js_display(format(kernel_eval(parse1('\
 (let ([fd (fd-open-input "foo")])\
   (let ([fd2 (fd-open-output "bar")])\
-    (process "/bin/cat" (hash \'stdin fd \'stdout fd2))))'))))
+    (let ([p (process "/bin/cat" (hash \'stdin fd \'stdout fd2))])\
+       (process-wait (hash-ref p \'process)))))'))))
+*/
+
+//js_display(format(kernel_eval(parse1('\
+//(let ([fd (fd-open-input "foo")])\
+//  (let ([fd2 (fd-open-output "bar")])\
+//    (process "/bin/cat" (hash \'stdin fd \'stdout fd2))))'))))
 
 
 
+//js_display(format(kernel_eval(parse1(
+//    '(hash-keys-subset? (hash-remove (hash \'a 1) \'a) (hash))'))))
 
+//js_display(format(kernel_eval(parse1(
+//    '(hash-keys (hash-remove (hash \'a 1) \'a))'))))
+
+
+
+//js_display(format(kernel_eval(parse1('(path-string? "")'))))
+
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
 
 

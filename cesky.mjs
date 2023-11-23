@@ -1,6 +1,9 @@
 // CEK-interpreter in ES6 JavaScript
-// [ ] string-split:     currently filters out empty strings in result
-// [ ] string->integer:  find max and min int and rewrite tests
+// Bugs found using the test suite:
+//   [ ] string-split:       currently filters out empty strings in result
+//   [ ] string->integer:    find max and min int and rewrite tests
+//   [ ] find-relative-path: from tests/path.rac
+
 // TODO SHORT TERM
 //  [ ] get harness to run
 //  [ ] implement hash_remove and use it in consume_option
@@ -952,7 +955,7 @@ function o_is_module_path(o) {
             return o_false
         return o_true
     } else
-        throw new Error("module-path?: expected a symbol or a string path")
+        return o_false
 }
 
 function is_path_string(o) {
@@ -1060,8 +1063,12 @@ function o_split_path(path) {
     let p = string_string(path)
     let d = dirname(p)
     let b = basename(p)
-    return o_cons( d ? make_string(d): o_false,
-                   make_string(b) )
+
+    if (d === undefined)  return o_cons( o_false,              make_string(b))        
+    if (d === "/")        return o_cons( o_false,              make_string( "/" + b))
+    if (d === ".")        return o_cons( o_false,              make_string(b))
+    if (d === false)      return o_cons( o_false,              make_string(b))
+    return                       o_cons( make_string(d + "/"), make_string(b))        
 }
 
 function o_build_module_path(base_mod_path, rel_mod_path) {
@@ -1070,7 +1077,6 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
     //js_write(base_mod_path)
     //js_display("rel")
     //js_write(rel_mod_path)
-    
     if (is_symbol(rel_mod_path))
         return rel_mod_path
     if (path_is_absolute(string_string(base_mod_path)))
@@ -1093,12 +1099,8 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
         return sym( string_string(o_build_path2( o_string_to_symbol(base_mod_path), sym(rel_str) ) ))
     } else {
         base_mod_path = car(o_split_path(base_mod_path))
-        //js_display("o_build_module-path - split base-path")
-        //js_write(base_mod_path)
-        //js_display("--")
         if (base_mod_path === o_false)
             base_mod_path = make_string("./")
-        // return make_string(build_path(string_string(base_mod_path), rel_str))
         return o_build_path(list(base_mod_path, make_string(rel_str)))
   }
 }

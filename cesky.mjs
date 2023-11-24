@@ -2326,11 +2326,10 @@ function format_string(o,mode) {
     return (mode===display_mode) ? s : "\"" + s+ "\""
 }
 function format_opaque(o) {
-    return "<"
-        + (  is_string(o) ? format_string(o, display_mode)
-             : ( is_symbol(o) ? format_symbol(o, display_mode)
-                 : "opaque"))
-        + ">"
+    return "#<" + format_symbol(opaque_key(o), display_mode) + ">"
+}
+function format_variable(o) {
+    return "#<variable:" + format_symbol(variable_name(o), display_mode) + ">"
 }
 
 function is_atom (o) {
@@ -2343,6 +2342,8 @@ function is_atom (o) {
         || (t === primitive_tag)  
         || (t === continuation_tag)
         || (t === hash_tag)
+        || (t === opaque_tag)
+        || (t === variable_tag)
         || (t === handle_tag)
         // || (t == trie_tag)
         || (o === o_null)          
@@ -2355,6 +2356,22 @@ function is_atom (o) {
         || (o === o_is_prompt_available)
         || (o === o_kernel_eval)
 }
+
+function format_hash(o, mode) {
+    if (mode === undefined)
+        mode = print_mode
+    let keys = trie_keys(o)
+    let xs = []    
+    for (let i=0; i<keys.length; i++) {
+        let key = keys[i]
+        if (is_symbol(key)) {
+            let val = o_trie_lookup(o, key)
+            if (val !== undefined)
+                xs[i] = format_symbol(key, print_mode) + " " + format(val, mode)
+        }
+    }
+    return "(hash" + xs.join(" ") + ")"
+}        
 
 
 function format_atom (o, mode) {
@@ -2374,10 +2391,9 @@ function format_atom (o, mode) {
     else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)       { return "#<continuation>" }
     else if (t == handle_tag)             { return "#<handle>" }
-    else if (t == hash_tag)               { js_write(format(o_hash_keys(o))) ;
-                                            //js_write(o) ;
-                                            return "#<hash>" }        
+    else if (t == hash_tag)               { return format_hash(o) }
     else if (t == opaque_tag)             { return format_opaque(o) }
+    else if (t == variable_tag)           { return format_variable(o) }
     // else if (t == trie_tag)           { return  "#<trie>" }
     else if (o === o_null)                { return "()" }
     else if (o === o_void)                { return "#<void>" }
@@ -2428,14 +2444,16 @@ function format(o, mode) {
                 // (~s '(foo)) = "(foo)
                 write_string(sp, "(")
                 if (mode === print_mode) {                    
-                    write_string(sp, is_list(o_cdr(o)) ? "list " : "cons ")
-                    pushdata("cons-tail", o_cdr(o))
+                    write_string(sp, is_list(o_cdr(o)) ? "list "  :
+                                    (is_pair(o_cdr(o)) ? "list* " :
+                                                         "cons "))
+                    pushdata((is_pair(o_cdr(o)) ? "list*-tail" : "cons-tail"), o_cdr(o))
                 } else                 
                     pushdata("tail", o_cdr(o))
                 o = o_car(o)
                 push("datum")
             }            
-        } else if ((cmd === "tail") || (cmd === "cons-tail")) {
+        } else if ((cmd === "tail") || (cmd === "cons-tail") || (cmd === "list*-tail")) {
             o = data
             if (is_pair(o)) {
                 write_string(sp, " ")
@@ -2445,7 +2463,11 @@ function format(o, mode) {
             } else if (o === o_null) {
                 write_string(sp, ")")
             } else if (is_atom(o)) {
-                if (cmd === "cons-tail")
+                if ((cmd === "cons-tail") && !(mode === print_mode))
+                    write_string(sp, "y")
+                if (cmd === "list*-tail")
+                    write_string(sp, " ")
+                if (mode === print_mode)
                     write_string(sp, " ")
                 else
                     write_string(sp, " . ")
@@ -4583,8 +4605,11 @@ js_display(format(kernel_eval(parse1('\
 
 
 
+
+
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
+
 
 

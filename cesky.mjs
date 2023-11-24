@@ -3031,7 +3031,7 @@ function consume_option(options_box, name) {
 
 function check_options_consumed(who, options) {
     if (trie_count(options) > 0) {
-        let keys = hash_keys(options)
+        let keys = trie_keys(options)
         fail1w(who, "unrecognized or unused option", car(keys))
     }
 }
@@ -3102,7 +3102,7 @@ function fd_open_input_handle(path, options) {
 
     let fd = -1
     
-    if (is_path_string(path)) {
+    if (is_string(path) && is_path_string(path)) {
         check_hash(who, options)
         check_options_consumed(who, options)
 
@@ -3141,10 +3141,11 @@ function o_fd_open_input(path, options) {
 }
 function o_fd_open_output(path, options) {
     const who = "fd-open-output";
-
+    let fd = -1
+    
     if (options === undefined)  options = make_empty_trie()
     
-    if (is_path_string(path)) {
+    if (is_string(path) && is_path_string(path)) {
         check_hash(who, options)
         
         let options_box = [options]
@@ -3169,7 +3170,6 @@ function o_fd_open_output(path, options) {
             }
         }
 
-        let fd = -1
         let path_str = string_string(path)
         try   { fd = fs.openSync(path_str, "w", fs.constants.O_WRONLY | mode) }
         catch (error) { fail1w_errno(who, "file open failed", path, error) }
@@ -4621,7 +4621,7 @@ js_display(format(kernel_eval(parse1('\
 
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
-js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
 
 
 

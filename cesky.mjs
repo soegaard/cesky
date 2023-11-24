@@ -217,10 +217,16 @@ function make_uninterned_symbol(str) {
     return [symbol_tag, str, key, symbol_counter++]
 }
 
-function is_interned_symbol(o) {
+function is_uninterned_symbol(o) {
+    if (!is_symbol(o))
+        return false
     let str = symbol_string(o)
     let val = symbol_table[str]
-    return !is_symbol(val)
+    if (val === undefined)
+        return true
+    if (symbol_id(val) === symbol_id(o))
+        return false
+    return true
 }
 
 function o_symbol_to_string(o) {
@@ -1631,7 +1637,7 @@ function o_error(objs) {
 function o_alert(objs) {
     // alert_color()
     falert(stdout, objs)
-    fprintf(stdout, "\n")
+    // fprintf(stdout, "\n")
     // normal_color(1)
     return o_void
 }
@@ -2315,13 +2321,14 @@ function to_string(os, mode) {
     return fs.join(mode === display_mode ? "" : " ")
 }
 
+// ~v print, ~s write, ~a display
 function o_tilde_v(os) { return make_string(to_string(os, print_mode))   } // TODO WIP 
 function o_tilde_s(os) { return make_string(to_string(os, write_mode))   } // TODO WIP
 function o_tilde_a(os) { return make_string(to_string(os, display_mode)) } // TODO WIP
 
 function format_symbol(o, mode)  {
     let s = symbol_string(o)
-    if (is_interned_symbol(o))
+    if (is_uninterned_symbol(o))
         return (mode === display_mode) ? s : "#<symbol:" + s + ">"
     else
         return (mode === print_mode ? "'" : "") + symbol_string(o)        
@@ -2389,9 +2396,9 @@ function format_hash(o, mode) {
         }
     }
     if (mode === print_mode)
-        return "(hash" + xs.join(" ") + ")"
+        return "(hash " + xs.join(" ") + ")"
     if (mode === display_mode)
-        return "#hash(" + xs.join("") + ")"    
+        return "#hash(" + xs.join(" ") + ")"    
     return "#hash(" + xs.join("") + ")"
 }        
 
@@ -2926,7 +2933,7 @@ function continue_step(s) {
         return [o_cons(quote_symbol, o_cons(o_void, o_null)),
                 state_env(s),state_mem(s),cont_next(k),state_m(s)]
 */    } else if (t === done_k) {
-        js_display("done_k")
+        // js_display("done_k")
         return s
     } else {
         console.log("//////")
@@ -3449,6 +3456,8 @@ function o_process(command_and_args) {
     
     return result
 }
+
+// Is it impossible to implement o_process_wait without `async` ?
 async function o_process_wait(pids) {
     js_display("> o_process_wait")
     js_write(pids)
@@ -4632,13 +4641,18 @@ js_display(format(kernel_eval(parse1('\
 
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/pair.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/pair.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/opaque.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/variable.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/module-path.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/kernel.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
 
 //(require "integer.rac")
 //(require "pair.rac")
@@ -4646,12 +4660,19 @@ js_display(format(kernel_eval(parse1('\
 //(require "symbol.rac")
 //(require "hash.rac")       ; [ ]
 //(require "procedure.rac")
+//(require "path.rac")
+//(require "opaque.rac")
+//(require "variable.rac")
+//(require "module-path.rac")
+//(require "kernel.rac")
+//(require "read+print.rac")
 
 
 
 
-js_display(format(kernel_eval(parse1(
-    '(hash-keys-subset? (hash-remove (hash (quote a) 1) (quote a)) (hash) )'))))
+//js_display(format(kernel_eval(parse1(
+//    '(hash-keys-subset? (hash-remove (hash (quote a) 1) (quote a)) (hash) )'))))
+//js_display(format(kernel_eval(parse1(
+//    '(hash-keys-subset? (hash)  (hash-remove (hash (quote a) 1) (quote a))  )'))))
 
-js_display(format(kernel_eval(parse1(
-    '(hash-keys-subset? (hash)  (hash-remove (hash (quote a) 1) (quote a))  )'))))
+

@@ -2367,10 +2367,22 @@ function format_hash(o, mode) {
         if (is_symbol(key)) {
             let val = o_trie_lookup(o, key)
             if (val !== undefined)
-                xs[i] = format_symbol(key, print_mode) + " " + format(val, mode)
+                if (mode === print_mode) {
+                    xs[i] = format_symbol(key, mode) + " " + format(val, mode)
+                } else if (mode === display_mode) {
+                    xs[i] = "(" + format_symbol(key, mode) + " . "
+                                + format(val, mode) + ")"
+                } else { // print_mode
+                    xs[i] = "(" + format_symbol(key, mode) + " . "
+                                + format(val, mode) + ")"
+                }
         }
     }
-    return "(hash" + xs.join(" ") + ")"
+    if (mode === print_mode)
+        return "(hash" + xs.join(" ") + ")"
+    if (mode === display_mode)
+        return "#hash(" + xs.join("") + ")"    
+    return "#hash(" + xs.join("") + ")"
 }        
 
 
@@ -2391,7 +2403,7 @@ function format_atom (o, mode) {
     else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)       { return "#<continuation>" }
     else if (t == handle_tag)             { return "#<handle>" }
-    else if (t == hash_tag)               { return format_hash(o) }
+    else if (t == hash_tag)               { return format_hash(o, mode) }
     else if (t == opaque_tag)             { return format_opaque(o) }
     else if (t == variable_tag)           { return format_variable(o) }
     // else if (t == trie_tag)           { return  "#<trie>" }

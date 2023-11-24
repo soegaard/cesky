@@ -1,5 +1,7 @@
 // CEK-interpreter in ES6 JavaScript
 // Bugs found using the test suite:
+//   [ ] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
+//       the issue is o_make_kernel_env "remakes" the primitives
 //   [ ] string-split:       currently filters out empty strings in result
 //   [ ] string->integer:    find max and min int and rewrite tests
 //   [ ] find-relative-path: from tests/path.rac
@@ -156,8 +158,8 @@ function check_string_index(who,o,i) {
     check_integer(who,i)
     let n = o[1].length
     let idx = number_value(i)
-    if(!( (0 <= idx) && ( idx < n)))
-        fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
+    if(!( (0 <= idx) && ( idx < n))) 
+        fail(who + ": index out of bounds for string, got " + format(o, write_mode) + " and " + idx)
     return idx
 }
 function check_substring_index(who,o,i) {
@@ -166,7 +168,7 @@ function check_substring_index(who,o,i) {
     let n = o[1].length
     let idx = number_value(i)
     if(!( (0 <= idx) && ( idx <= n)))
-        fail(who + ": index out of bounds for string, got " + format(o) + " and " + idx)
+        fail(who + ": index out of bounds for string, got " + format(o, write_mode) + " and " + idx)
     return idx
 }
 function check_integer(who, o) {
@@ -213,6 +215,12 @@ function symbol_loc(o)    { return o[4] }
 function make_uninterned_symbol(str) {
     let key = Symbol(str)            // used as keys in hash tables
     return [symbol_tag, str, key, symbol_counter++]
+}
+
+function is_interned_symbol(o) {
+    let str = symbol_string(o)
+    let val = symbol_table[str]
+    return !is_symbol(val)
 }
 
 function o_symbol_to_string(o) {
@@ -2244,6 +2252,8 @@ function o_string_read(str, start, where) {
         where = o_false
     check_string(who, str)
     check_integer(who, start)
+    if (string_string(str).length === number_value(start))
+        return o_null
     let idx = check_string_index(who, str, start);
     
     let sp = make_string_input_port(string_string(str))
@@ -2298,16 +2308,22 @@ function to_string(os, mode) {
     return fs.join(mode === display_mode ? "" : " ")
 }
 
-function o_tilde_v(os) { return make_string(to_string(os, print_mode))   } // TODO WIP use mode in o_to_string 
+function o_tilde_v(os) { return make_string(to_string(os, print_mode))   } // TODO WIP 
 function o_tilde_s(os) { return make_string(to_string(os, write_mode))   } // TODO WIP
 function o_tilde_a(os) { return make_string(to_string(os, display_mode)) } // TODO WIP
 
-function format_symbol(o, mode)  { return (mode === print_mode ? "'" : "") + symbol_string(o) }
+function format_symbol(o, mode)  {
+    let s = symbol_string(o)
+    if (is_interned_symbol(o))
+        return (mode === display_mode) ? s : "#<symbol:" + s + ">"
+    else
+        return (mode === print_mode ? "'" : "") + symbol_string(o)        
+} 
 function format_number(o)        { return number_value(o).toString() }
 function format_boolean(o)       { return (o === o_false ? "#f" : "#t") }
 function format_string(o,mode) {
     let s = string_string(o) ;
-    return (mode===display_mode)?s:"\""+s+"\""
+    return (mode===display_mode) ? s : "\"" + s+ "\""
 }
 function format_opaque(o) {
     return "<"
@@ -2349,13 +2365,12 @@ function format_atom (o, mode) {
     else if (t == number_tag)             { return format_number(o)   }
     else if (t == boolean_tag)            { return format_boolean(o)  }
     else if (t == string_tag)             { return format_string(o, mode) }
-    else if (t == closure_tag)            {
-        let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
-        return  "#<procedure" + (is_string(maybe_name) ?
-                                 ":" + string_string(maybe_name) :
-                                 "")
-            + ">"
-    }
+    else if (t == closure_tag)            { let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
+                                            return  "#<procedure" + (is_string(maybe_name) ?
+                                                                     ":" + string_string(maybe_name) :
+                                                                     "")
+                                            + ">"
+                                          }
     else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
     else if (t == continuation_tag)       { return "#<continuation>" }
     else if (t == handle_tag)             { return "#<handle>" }
@@ -2376,7 +2391,8 @@ function format_atom (o, mode) {
     else
         throw new Error("format_atom: expected atom, got: " + js_format(o))
 }
-    
+
+
 function format(o, mode) {
     if (o === undefined)
         return "<js-undefined>"
@@ -2406,14 +2422,20 @@ function format(o, mode) {
             if(is_atom(o)) {
                 write_string(sp, format_atom(o, mode))
             } else if (is_pair(o)) {
-                if (mode === print_mode)
-                    write_string(sp, "'")
+                // ~v print, ~s write, ~a display
+                // (~v '(foo)) = "(list 'foo)
+                // (~a '(foo)) = "(foo)
+                // (~s '(foo)) = "(foo)
                 write_string(sp, "(")
-                pushdata("tail", o_cdr(o))
+                if (mode === print_mode) {                    
+                    write_string(sp, is_list(o_cdr(o)) ? "list " : "cons ")
+                    pushdata("cons-tail", o_cdr(o))
+                } else                 
+                    pushdata("tail", o_cdr(o))
                 o = o_car(o)
                 push("datum")
             }            
-        } else if (cmd === "tail") {
+        } else if ((cmd === "tail") || (cmd === "cons-tail")) {
             o = data
             if (is_pair(o)) {
                 write_string(sp, " ")
@@ -2423,7 +2445,10 @@ function format(o, mode) {
             } else if (o === o_null) {
                 write_string(sp, ")")
             } else if (is_atom(o)) {
-                write_string(sp, " . ")                
+                if (cmd === "cons-tail")
+                    write_string(sp, " ")
+                else
+                    write_string(sp, " . ")
                 write_string(sp, format_atom(o, mode))
                 write_string(sp, ")")
                 o = data
@@ -4556,8 +4581,10 @@ js_display(format(kernel_eval(parse1('\
 
 
 
-//js_display(format(kernel_eval(parse1('(path-string? "")'))))
 
-js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
+
+// js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
+
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
 
 

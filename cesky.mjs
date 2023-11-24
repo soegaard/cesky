@@ -696,7 +696,7 @@ function trie_remove(trie, id, depth) {
             return trie
 
         new_trie = trie_clone(trie)
-        trie_next(trie)[i] = sub_trie
+        trie_next(new_trie)[i] = sub_trie
         decrement_trie_count(new_trie)
         
         if ((sub_trie !== o_undefined)
@@ -732,8 +732,8 @@ function trie_is_keys_subset(trie1_in, trie2_in) {
     else if (trie2_in === o_undefined)
         return false
     else {
-        let trie1 = trie1_in;
-        let trie2 = trie2_in;
+        let trie1 = trie1_in
+        let trie2 = trie2_in
         let i = 0
 
         if (trie_count(trie1) > trie_count(trie2))
@@ -743,7 +743,6 @@ function trie_is_keys_subset(trie1_in, trie2_in) {
             if (!trie_is_keys_subset(trie_next(trie1)[i], trie_next(trie2)[i]))
                 return false
         }
-
         return true
     }
 }
@@ -826,6 +825,7 @@ function symbol_list_sort(syms) {
     return array_to_list(as)
 }
 function o_is_hash_keys_subset(ht, ht2) {
+    // ht1 <= ht2
     const who = "hash-keys-subset?"
     check_hash(who, ht)
     check_hash(who, ht2)
@@ -923,7 +923,8 @@ const handle_cleanable_status       = Symbol("handle-cleanable-status")
 
 let handle_id_counter = 0
 
-function make_handle(fd,status,data)  { return [handle_tag, handle_id_counter++, fd, status, data] }
+function make_handle(fd,status,data)  {
+    return [handle_tag, handle_id_counter++, fd, status, data] }
 function handle_id(o)                 { return o[1] }
 function handle_fd(o)                 { return o[2] } // union
 function handle_pid(o)                { return o[2] } // union
@@ -933,8 +934,10 @@ function handle_data(o)               { return o[4] } // data is a ChildProcess 
 function set_handle_status(o, s)      { o[3] = s }
 
 
-function is_handle(o)         { return              Array.isArray(o) && (tag(o) === handle_tag)  }
-function o_is_handle(o)       { return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
+function is_handle(o){
+    return              Array.isArray(o) && (tag(o) === handle_tag)  }
+function o_is_handle(o) {
+    return make_boolean(Array.isArray(o) && (tag(o) === handle_tag)) }
 function is_process_handle(o) { return Array.isArray(o)
                                 && (tag(o) === handle_tag)
                                 && ( (handle_status(o) === handle_process_running_status)
@@ -1023,7 +1026,8 @@ function o_build_path_multi(who, paths, build_path2) {
         check_path_string(who, post)
 
         if (path_is_absolute(string_string(post)))
-            throw new Error(who + ": additional path is not relative\ngiven: " + string_string(post))
+            throw new Error(who + ": additional path is not relative\ngiven: "
+                                + string_string(post))
 
         pre = build_path2(pre, post)
     }
@@ -1053,7 +1057,8 @@ function o_build_path2(pre, post) {
     let last       = joined.substr(-1)
     let last_post  = post_str.substr(-1)
     let last2_post = post_str.substr(-2)
-    let end_sep    = ((last === "/") || (last === "."))  ?  ""  :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
+    let end_sep    =     ((last === "/") || (last       === "."))  ?  ""
+                :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
     return make_string( joined + end_sep )
 }
 
@@ -1100,11 +1105,13 @@ function o_build_module_path(base_mod_path, rel_mod_path) {
         let saw_slash = /[/]/.test(symbol_string(base_mod_path))
         if (!saw_slash)
             base_mod_path = symbol_string(base_mod_path) + "/main"
-        base_mod_path = (is_symbol(base_mod_path) ? symbol_string(base_mod_path) : base_mod_path)
+        base_mod_path = (is_symbol(base_mod_path) ? symbol_string(base_mod_path)
+                                                  : base_mod_path)
         base_mod_path = car(o_split_path(make_string(base_mod_path)))
         //js_display("base_mod_path after split")
         //js_write(base_mod_path)
-        return sym( string_string(o_build_path2( o_string_to_symbol(base_mod_path), sym(rel_str) ) ))
+        return sym( string_string(o_build_path2( o_string_to_symbol(base_mod_path),
+                                                 sym(rel_str) ) ))
     } else {
         base_mod_path = car(o_split_path(base_mod_path))
         if (base_mod_path === o_false)
@@ -2360,21 +2367,24 @@ function is_atom (o) {
 function format_hash(o, mode) {
     if (mode === undefined)
         mode = print_mode
-    let keys = trie_keys(o)
-    let xs = []    
-    for (let i=0; i<keys.length; i++) {
-        let key = keys[i]
+
+    let keys = o_hash_keys(o)
+    let xs = []
+    let i = 0
+    while (keys !== o_null) {
+        let key = car(keys)
+        keys = cdr(keys)
         if (is_symbol(key)) {
             let val = o_trie_lookup(o, key)
             if (val !== undefined)
                 if (mode === print_mode) {
-                    xs[i] = format_symbol(key, mode) + " " + format(val, mode)
+                    xs[i++] = format_symbol(key, mode) + " " + format(val, mode)
                 } else if (mode === display_mode) {
-                    xs[i] = "(" + format_symbol(key, mode) + " . "
-                                + format(val, mode) + ")"
+                    xs[i++] = "(" + format_symbol(key, mode) + " . "
+                                  + format(val, mode) + ")"
                 } else { // print_mode
-                    xs[i] = "(" + format_symbol(key, mode) + " . "
-                                + format(val, mode) + ")"
+                    xs[i++] = "(" + format_symbol(key, mode) + " . "
+                                  + format(val, mode) + ")"
                 }
         }
     }
@@ -2390,32 +2400,33 @@ function format_atom (o, mode) {
     // atom here means a single value, which can be formatted
     // without recursion
     let t = tag(o)
-    if      (t == symbol_tag)             { return format_symbol(o, mode) }
-    else if (t == number_tag)             { return format_number(o)   }
-    else if (t == boolean_tag)            { return format_boolean(o)  }
-    else if (t == string_tag)             { return format_string(o, mode) }
-    else if (t == closure_tag)            { let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
-                                            return  "#<procedure" + (is_string(maybe_name) ?
-                                                                     ":" + string_string(maybe_name) :
-                                                                     "")
-                                            + ">"
+    if      (t == symbol_tag)           { return format_symbol(o, mode) }
+    else if (t == number_tag)           { return format_number(o)   }
+    else if (t == boolean_tag)          { return format_boolean(o)  }
+    else if (t == string_tag)           { return format_string(o, mode) }
+    else if (t == closure_tag)          { let maybe_name = o_car(o_cdr(o_cdr(closure_e(o))))
+                                          return   "#<procedure"
+                                                 + (is_string(maybe_name) ?
+                                                    ":" + string_string(maybe_name) :
+                                                    "")
+                                                 + ">"
                                           }
-    else if (t == primitive_tag)          { return "#<procedure:" + primitive_name(o) +  ">" }
-    else if (t == continuation_tag)       { return "#<continuation>" }
-    else if (t == handle_tag)             { return "#<handle>" }
-    else if (t == hash_tag)               { return format_hash(o, mode) }
-    else if (t == opaque_tag)             { return format_opaque(o) }
-    else if (t == variable_tag)           { return format_variable(o) }
+    else if (t == primitive_tag)        { return "#<procedure:" + primitive_name(o) +  ">" }
+    else if (t == continuation_tag)     { return "#<continuation>" }
+    else if (t == handle_tag)           { return "#<handle>" }
+    else if (t == hash_tag)             { return format_hash(o, mode) }
+    else if (t == opaque_tag)           { return format_opaque(o) }
+    else if (t == variable_tag)         { return format_variable(o) }
     // else if (t == trie_tag)           { return  "#<trie>" }
-    else if (o === o_null)                { return "()" }
-    else if (o === o_void)                { return "#<void>" }
-    else if (o === o_eof)                 { return "#<eof>" }
-    else if (o === o_undefined)           { return "#<undefined>" }
-    else if (o === o_apply)               { return "#<procedure:apply>" }
-    else if (o === o_callcc)              { return "#<procedure:call/cc>" }
-    else if (o === o_call_prompt)         { return "#<procedure:call/prompt>" }
+    else if (o === o_null)              { return "()" }
+    else if (o === o_void)              { return "#<void>" }
+    else if (o === o_eof)               { return "#<eof>" }
+    else if (o === o_undefined)         { return "#<undefined>" }
+    else if (o === o_apply)             { return "#<procedure:apply>" }
+    else if (o === o_callcc)            { return "#<procedure:call/cc>" }
+    else if (o === o_call_prompt)       { return "#<procedure:call/prompt>" }
     else if (o === o_is_prompt_available) { return "#<procedure:o_is_prompt_available>" }
-    else if (o === o_kernel_eval)         { return "#<procedure:kernel-eval>" }
+    else if (o === o_kernel_eval)       { return "#<procedure:kernel-eval>" }
     else
         throw new Error("format_atom: expected atom, got: " + js_format(o))
 }
@@ -4621,7 +4632,26 @@ js_display(format(kernel_eval(parse1('\
 
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
-js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/pair.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
+
+//(require "integer.rac")
+//(require "pair.rac")
+//(require "string.rac")
+//(require "symbol.rac")
+//(require "hash.rac")       ; [ ]
+//(require "procedure.rac")
 
 
 
+
+js_display(format(kernel_eval(parse1(
+    '(hash-keys-subset? (hash-remove (hash (quote a) 1) (quote a)) (hash) )'))))
+
+js_display(format(kernel_eval(parse1(
+    '(hash-keys-subset? (hash)  (hash-remove (hash (quote a) 1) (quote a))  )'))))

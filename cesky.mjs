@@ -1,14 +1,14 @@
 // CEK-interpreter in ES6 JavaScript
 // Bugs found using the test suite:
-//   [ ] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
+//   [x] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
 //       the issue is o_make_kernel_env "remakes" the primitives
 //   [ ] string-split:       currently filters out empty strings in result
 //   [ ] string->integer:    find max and min int and rewrite tests
 //   [ ] find-relative-path: from tests/path.rac
 
 // TODO SHORT TERM
-//  [ ] get harness to run
-//  [ ] implement hash_remove and use it in consume_option
+//  [x] get harness to run
+//  [ ] fix consume_option
 //  [ ] fix o_error
 //  [x] fix bug in hash-count (or hash_extend)
 //  [x] track down the datum->syntax undefined error
@@ -21,7 +21,7 @@
 //  [x] Use uninterned JavaScript symbol for tag
 //  [ ] Implement more primitives
 //  [/] Port lib/
-//  [ ] Command line arguments
+//  [x] Command line arguments
 //  [ ] Produce single file from library files and cesky.mjs for the browser.
 //  [ ] Documentation
 //  [ ] Name: `rac` (aka a small racket), `cesky` ?
@@ -202,7 +202,7 @@ function sym(str) {
     return (is_symbol(interned) ? interned : make_symbol(str))
 }
 function make_symbol(str) {
-    let key = Symbol(str)            // used as keys in mutable hash tables
+    let key = Symbol.for(str)            // used as keys in mutable hash tables
     let val = [symbol_tag, str, key, symbol_counter++]
     symbol_table[str] = val
     return val
@@ -2610,7 +2610,13 @@ function o_top_ref(s) {
 
 // TOP ENVIRONMENT
 function o_kernel_env() {
-    return make_top_env(hash_mode)
+    let env = make_empty_trie()
+    function extend(val, key, map) {
+        let s = sym(Symbol.keyFor(key))
+        env = o_hash_set(env, s, val)
+    }
+    top_level.forEach(extend)
+    return env
 }
 
 
@@ -3538,23 +3544,17 @@ let p_register_module     = primitive2("register-module",    register_module)
 
 
 const hash_mode = Symbol("hash_mode")
-const env_mode  = Symbol("env_mode")
 const top_mode  = Symbol("env_mode")
 
 
 function make_top_env(mode) {
     // set env
     let env = false
-    if (mode === env_mode)
-        env = make_empty_env()
-    else if (mode === hash_mode)
-        env = make_empty_trie()
+    env = make_empty_trie()
     
     // extend env with elements
     let extend = false
-    if (mode === env_mode)
-        extend = (name,val) => env = extend_env(env, name, val)
-    else if (mode === hash_mode)
+    if (mode === hash_mode)
         extend = (name,val) => env = o_hash_set(env, name, val)
     else
         extend = (name,val) => extend_top_level(symbol_key(name), val)
@@ -3770,8 +3770,19 @@ function make_top_env(mode) {
 
 let o_top_env       = make_top_env(top_mode)  // inserts directly into top_level
 o_top_env = top_level
-let initial_env     = make_top_env(env_mode)
+
+function make_initial_env() {
+    let env = make_empty_env()
+    function extend(val, key, map) {
+        let s = sym(Symbol.keyFor(key))
+        env = extend_env(env, s, val)
+    }
+    top_level.forEach(extend)
+    return env
+}
+let initial_env     = make_initial_env()
 let initial_env_set = env_to_set(initial_env)
+
 
 
 // Declare the kernel module
@@ -4648,11 +4659,20 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/opaque.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/variable.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/module-path.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/kernel.rac"))'))))
+
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/kernel.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax-hygienic.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/process.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form-hygienic.rac"))'))))
+//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro.rac"))'))))
 
 //(require "integer.rac")
 //(require "pair.rac")
@@ -4666,6 +4686,14 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print
 //(require "module-path.rac")
 //(require "kernel.rac")
 //(require "read+print.rac")
+//(require "syntax.rac")
+//(require "syntax-hygienic.rac")
+//(require "file-handle.rac")
+//...
+//(require "form.rac")
+//(require "form-hygienic.rac")
+//(require "macro.rac")
+//(require "macro-hygienic.rac")
 
 
 
@@ -4676,3 +4704,7 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print
 //    '(hash-keys-subset? (hash)  (hash-remove (hash (quote a) 1) (quote a))  )'))))
 
 
+//let ke = o_kernel_env()
+// js_write(o_kernel_env())
+//js_write(o_hash_ref(o_kernel_env(), sym("car")))
+//js_write(o_top_env)

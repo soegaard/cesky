@@ -1,4 +1,10 @@
 // CEK-interpreter in ES6 JavaScript
+// NODE TO BROWSER
+//  [ ] Use console instead of terminal to report errors.
+//  [ ] Load Node modules dynamically;
+//  [ ] Emulate filesystem for the modules.
+//  [ ] Or use fasl?
+
 // Bugs found using the test suite:
 //   [x] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
 //       the issue is o_make_kernel_env "remakes" the primitives
@@ -1586,7 +1592,22 @@ function error_arg(name, argument_name, arg) {
 
 // TERMINAL SUPPORT
 
-/*
+function is_terminal(fd) {
+    return tty.isatty(fd)
+}
+
+tty.isatty(process.stdin.fd)
+
+function get_std_handle(which) {
+    if (which === 0)
+        return process.stdin.fd
+    if (which === 1)
+        return process.stdout.fd
+    if (which === 2)
+        return process.stderr.fd
+    else
+        throw new Error("expected 0, 1, 2")
+}
 
 function print_terminal(which, str) {
   if (is_terminal(get_std_handle(which))) {
@@ -1594,6 +1615,7 @@ function print_terminal(which, str) {
   }
 }
 
+/*
 static void zuo_error_color() {
   zuo_suspend_signal();
   zuo_print_terminal(2, "\033[91m");

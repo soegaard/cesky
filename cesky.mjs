@@ -4,7 +4,7 @@
 //       the issue is o_make_kernel_env "remakes" the primitives
 //   [x] string-split:       currently filters out empty strings in result
 //   [ ] string->integer:    find max and min int and rewrite tests
-//   [ ] find-relative-path: from tests/path.rac
+//   [x] find-relative-path: from tests/path.rac
 
 // TODO SHORT TERM
 //  [x] get harness to run
@@ -13,14 +13,14 @@
 //  [x] fix bug in hash-count (or hash_extend)
 //  [x] track down the datum->syntax undefined error
 //      - [x] test looper
-//      - [x] test sticher
+//      - [x] test stitcher
 //  [x] multiple arguments for +, -, * 
-//  [ ] replace representation of environments with tries
+//  [ ] replace representation of environments with tries (not needed?)
 
 // TODO
 //  [x] Use uninterned JavaScript symbol for tag
-//  [ ] Implement more primitives
-//  [/] Port lib/
+//  [/] Implement more primitives
+//  [x] Port lib/
 //  [x] Command line arguments
 //  [ ] Produce single file from library files and cesky.mjs for the browser.
 //  [ ] Documentation
@@ -39,7 +39,7 @@ import * as fs            from 'node:fs'             // for readFileSync()
 import * as os            from 'node:os'             // for platform()
 import * as path          from 'node:path'           // for isAbsolute()
 import * as child_process from 'node:child_process'  // 
-import { cwd, stdin, stdout, stderr }  from 'node:process'
+import { cwd, stdin, stdout, stderr, process }  from 'node:process'
 
 
 // TODO: the last true turns on terminal colors,
@@ -1026,7 +1026,7 @@ function o_build_path_multi(who, paths, build_path2) {
 
     paths = cdr(paths)
 
-    while (1) {
+    while (true) { // eslint-disable-line
         if (paths === o_null)
             return pre
 
@@ -1667,10 +1667,10 @@ function o_arity_error(name, args) {
     if (! is_list(args))
         fail_arg(who, "list", args)
 
-    let msg = tilde_a(list( (name === o_false) ? string("[procedure]") : name,
-                            make_string(": wrong number of arguments: "),
-                            (args === o_null) ? make_string("[no arguments]")
-                                              : tilde_v(args)))
+    let msg = o_tilde_a(list( (name === o_false) ? make_string("[procedure]") : name,
+                              make_string(": wrong number of arguments: "),
+                              (args === o_null) ? make_string("[no arguments]")
+                                                : o_tilde_v(args)))
     fail(msg)
     return o_undefined
 }
@@ -2299,7 +2299,7 @@ function o_string_read(str, start, where) {
     let last  = false
     i = 0
     let obj = o_false
-    while (true) {
+    while (true) { // eslint-disable-line
         let obj_and_index = parse_s_expr(tokens, i)
         obj = obj_and_index[0]
         i   = obj_and_index[1]
@@ -3004,7 +3004,6 @@ function get_env_as_trie() {
         o_trie_set(trie, sym(key), make_string(value))
     }
     return trie
-    js_write(trie)
 }
 
 let o_the_runtime_env = make_empty_trie()
@@ -3197,14 +3196,14 @@ function o_fd_open_output(path, options) {
                     mode = fs.constants.O_CREAT | fs.constants.O_TRUNC
                 else if (exists === sym("must-truncate"))
                     mode = fs.constants.O_TRUNC
-                else if (exists === symbol("append"))
+                else if (exists === sym("append"))
                     mode = fs.constants.O_CREAT | fs.constants.O_APPEND
                 else if (exists === sym("update"))
                     mode = 0
                 else if (exists === sym("can-update"))
                     mode = fs.constants.O_CREAT
                 else
-                    zuo_fail1w(who, "invalid exists mode", exists)
+                    fail1w(who, "invalid exists mode", exists)
             }
         }
 
@@ -3287,6 +3286,7 @@ function o_fd_write(handle, str) {
     return o_void;
 }
 function fill(s, fd) {
+    const who = "fill"
     try { fs.writeFileSync(fd, s) }
     catch (e) { fail1w_errno(who, "error writing to stream", dir_path, e) }
 }
@@ -3787,7 +3787,7 @@ o_top_env = top_level
 
 function make_initial_env() {
     let env = make_empty_env()
-    function extend(val, key, map) {
+    function extend(val, key) {
         let s = sym(Symbol.keyFor(key))
         env = extend_env(env, s, val)
     }
@@ -4301,7 +4301,7 @@ js_write(o_trie_lookup(t, bar))
 //    '(hash-keys (module->hash "lib/rac/private/base-common/bind.rac"))'))))
 
 
-
+/*
 function t(str) {
     // js_display("--")
     js_display(str)
@@ -4309,6 +4309,7 @@ function t(str) {
     //js_display(format(result))
     js_write(format(result, write_mode))
 }
+*/
 
 // OPAQUE
 
@@ -4666,7 +4667,6 @@ js_display(format(kernel_eval(parse1('\
 
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
-/*
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/pair.rac"))'))))
@@ -4674,9 +4674,7 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
-*/
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
-/*
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/opaque.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/variable.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/module-path.rac"))'))))
@@ -4689,12 +4687,12 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax-hyg
 //js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
 
 
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/process.rac"))'))))
+// js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/process.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form-hygienic.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro-hygienic.rac"))'))))
-*/
+
 //(require "integer.rac")
 //(require "pair.rac")
 //(require "string.rac")

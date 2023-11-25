@@ -2,7 +2,7 @@
 // Bugs found using the test suite:
 //   [x] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
 //       the issue is o_make_kernel_env "remakes" the primitives
-//   [ ] string-split:       currently filters out empty strings in result
+//   [x] string-split:       currently filters out empty strings in result
 //   [ ] string->integer:    find max and min int and rewrite tests
 //   [ ] find-relative-path: from tests/path.rac
 
@@ -145,10 +145,14 @@ function o_string_split(o1,o2) {
                              .map(make_string))
     else {
         check_string(who,o2)
-        return array_to_list( string_string(o1)
-                              .split(string_string(o2))
-                              .filter((x) => x !== "")
-                              .map(make_string))
+        let str2 = string_string(o2)
+        if (str2 === "")
+            fail_arg(who, "non-empty string", o2)
+        else
+            return array_to_list( string_string(o1)
+                                  .split(str2)
+                                  .map(make_string))
+
     }
 }
     
@@ -4659,7 +4663,7 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/opaque.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/variable.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/module-path.rac"))'))))
@@ -4669,10 +4673,13 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax-hygienic.rac"))'))))
 //js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
+
+
 //js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/process.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form-hygienic.rac"))'))))
-//js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro.rac"))'))))
+js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro-hygienic.rac"))'))))
 
 //(require "integer.rac")
 //(require "pair.rac")

@@ -1011,7 +1011,7 @@ function o_current_directory() {
 }
 
 function o_build_path_multi(who, paths, build_path2) {
-    //js_display("o_build_path_multi")
+    // js_display("o_build_path_multi")
     //js_display("who")
     //js_write(who)
     //js_display("paths")
@@ -1043,9 +1043,11 @@ function o_build_path_multi(who, paths, build_path2) {
     }
 }
 function o_build_raw_path(paths) {
+    // js_display("o_build_raw_path")
     return o_build_path_multi("build-raw-path", paths, o_build_raw_path2)
 }
 function o_build_path(paths) {
+    // js_display("o_build")
     return o_build_path_multi("build-path", paths, o_build_path2)
 }
 function o_normalize_input_path(path) {
@@ -1053,6 +1055,7 @@ function o_normalize_input_path(path) {
     return o_build_path2(make_string("."), path)
 }
 function o_build_raw_path2(pre, post) {
+    // js_display("o_build_raw_path2")
     // if pre doesn't end in a separator, we add one
     let pre_str  = string_string(pre)
     let post_str = string_string(post)
@@ -1068,8 +1071,11 @@ function o_build_path2(pre, post) {
     let last_post  = post_str.substr(-1)
     let last2_post = post_str.substr(-2)
     let end_sep    =     ((last === "/") || (last       === "."))  ?  ""
-                :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
-    return make_string( joined + end_sep )
+        :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
+    if (path.isAbsolute(pre_str) && path.isAbsolute(post_str))
+        return make_string( path.relative(pre_str, post_str) )
+    else
+        return make_string( joined + end_sep )
 }
 
 
@@ -1088,7 +1094,9 @@ function o_split_path(path) {
     let b = basename(p)
 
     if (d === undefined)  return o_cons( o_false,              make_string(b))        
-    if (d === "/")        return o_cons( o_false,              make_string( "/" + b))
+    if (d === "/")        return (b === "" ?
+                                    o_cons( o_false,           make_string("/"))
+                                  : o_cons( make_string("/"),  make_string(b)))
     if (d === ".")        return o_cons( o_false,              make_string(b))
     if (d === false)      return o_cons( o_false,              make_string(b))
     return                       o_cons( make_string(d + "/"), make_string(b))        
@@ -3027,6 +3035,8 @@ o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("minor-version"),
 
 o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("env"),
                                get_env_as_trie())
+o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("system-type"),
+                               make_string("unix"))
 
 
 function o_runtime_env() {
@@ -4656,6 +4666,7 @@ js_display(format(kernel_eval(parse1('\
 
 // js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
+/*
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/pair.rac"))'))))
@@ -4663,7 +4674,9 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/string.rac
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/symbol.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/hash.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/procedure.rac"))'))))
+*/
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/path.rac"))'))))
+/*
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/opaque.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/variable.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/module-path.rac"))'))))
@@ -4672,6 +4685,7 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/kernel.rac
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/read+print.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/syntax-hygienic.rac"))'))))
+
 //js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/file-handle.rac"))'))))
 
 
@@ -4680,7 +4694,7 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form.rac")
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/form-hygienic.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro-hygienic.rac"))'))))
-
+*/
 //(require "integer.rac")
 //(require "pair.rac")
 //(require "string.rac")

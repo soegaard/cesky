@@ -66,13 +66,12 @@
 //   join        [done]
 //   basename    [done]
 //   dirname     [done]
-//   relative
+//   relative    [done] only the absolute/absolute case
 // node:child_process
 //   spawn    - only used by o_process
 
 
 import * as fs                         from 'node:fs'
-import * as path                       from 'node:path'
 import * as child_process              from 'node:child_process'
 import { cwd, stdin, stdout, stderr }  from 'node:process'
 
@@ -148,11 +147,6 @@ function js_display(x) { console.log(x) }
 function path_isAbsolute(strpath) {
     return strpath[0] === "/"
 }
-
-//function relative(from_path, to_path) {
-//    // Find the relative path between from_path to to_path.
-//}
-
 function join2(normalized_pred, filename) {
     // filename is ".", ".." or a pathstring
     // normalized_pred is represented as an array of filenames
@@ -186,7 +180,6 @@ function join2(normalized_pred, filename) {
         normalized_pred.push(filename)
     return normalized_pred    
 }
-        
 export function normalize(path) {
     // Note: `normalize` removes trailing slashes from `path`.
     if (path === "") return "."
@@ -233,6 +226,52 @@ export function path_join(...paths) {
     if (n === 1)
         return normalize(paths[0])
     return normalize(paths.join("/"))
+}
+export function path_relative_abs_abs(from_path, to_path) {
+    // Find the relative path between from_path to to_path.
+    // This assumes that both paths are absolute.
+    // If from and to each resolve to the same path, the empty string is returned.
+
+    // 1. Normalize both paths (and fast track the case where they are equal)
+    if (from_path === to_path)
+        return ""
+    let from = normalize(from_path)
+    let to   = normalize(to_path)
+    if (from === to)
+        return ""
+    // 2. Remove longest common prefix path
+    let from_filenames = from.split("/")
+    let to_filenames   =   to.split("/")
+    while (   (from_filenames.length > 0)
+           && (  to_filenames.length > 0)
+           && (from_filenames[0] === to_filenames[0])) {
+        from_filenames.shift()
+        to_filenames.shift()
+    }
+    // 3. The relative path starts with as many .. as there
+    //    are filenames left in from_filenames.
+    //    Well, at least if there are no dot-dots in the filenames.
+    let dotdot_count = 0
+    for (let i in from_filenames) {
+        if (from_filenames[i] == "..")
+            dotdot_count++
+    }
+    let result = []
+    for(let i=0; i<from_filenames.length - 2*dotdot_count; i++)
+        result[i] = ".."
+    // 4. Join one to-filename to the from-filenames at a time.
+    for (let i in to_filenames) {
+        let to_filename = to_filenames[i]
+        result = join2(result, to_filename)
+    }
+    // 5. If there are two or more path segments, separate them with slash.
+    let m = result.length
+    if (m === 0)
+        return "."
+    if ((m === 1) && (result[0] === ""))
+        return "/"
+    
+    return result.join("/")
 }
 export function path_dirname(path) {
     // returns the portion of a pathname before the filename
@@ -1313,7 +1352,7 @@ function o_build_path2(pre, post) {
                 :  (((last_post === "/") || (last2_post === "..")) ? "/" 
                 : "")
     if (path_isAbsolute(pre_str) && path_isAbsolute(post_str))
-        return make_string( path.relative(pre_str, post_str) )
+        return make_string( path_relative_abs_abs(pre_str, post_str) )
     else
         return make_string( joined + end_sep )
 }
@@ -3466,7 +3505,8 @@ function o_fd_open_output(path, options) {
         return make_handle(fd, handle_open_fd_out_status)
     } else {
         if (!is_nonnegative_integer(path))
-            fail_arg(who, "path string, 'stdout, 'stderr, or nonnegative integer", path)
+            fail_arg(who, "path string, 'stdout, 'stderr, or nonnegative integer",
+                     path)
         check_hash(who, options)
         check_options_consumed(who, options)
         fd = number_value(path) // todo: is this correct?
@@ -3615,7 +3655,7 @@ function o_process(command_and_args) {
 
     // Add ./ to command if there is no path.
     let command_str = string_string(command)
-    if ( !path_is_absolute(command_str)   &&   (car(o_split_path(command)) === o_false))
+    if ( !path_is_absolute(command_str) && (car(o_split_path(command)) === o_false))
         command = o_build_raw_path2(make_string("."), command)
 
     // Put the arguments from rev_args into an array argv.

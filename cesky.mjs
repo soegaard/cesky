@@ -142,9 +142,10 @@ function js_display(x) { console.log(x) }
 //   directory of the process. A null pathname is invalid.
 
 
-// Browser friendly implementations of Node functions
+// Browser friendly implementations of Node functions from `path`.
+// We prefix their names with path_ .
 
-function isAbsolute(strpath) {
+function path_isAbsolute(strpath) {
     return strpath[0] === "/"
 }
 
@@ -1235,7 +1236,7 @@ function o_is_path_string(o) {
 }
 
 function path_is_absolute(p) {
-    return path.isAbsolute(p)
+    return path_isAbsolute(p)
 }
 function o_is_relative_path(o) {
     check_path_string("relative-path?", o)
@@ -1311,7 +1312,7 @@ function o_build_path2(pre, post) {
     let end_sep    =     ((last === "/") || (last       === "."))  ? ""
                 :  (((last_post === "/") || (last2_post === "..")) ? "/" 
                 : "")
-    if (path.isAbsolute(pre_str) && path.isAbsolute(post_str))
+    if (path_isAbsolute(pre_str) && path_isAbsolute(post_str))
         return make_string( path.relative(pre_str, post_str) )
     else
         return make_string( joined + end_sep )

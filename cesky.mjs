@@ -1,12 +1,23 @@
 // CEK-interpreter in ES6 JavaScript
+
+// HOW TO USE CESKY IN THE REPL
+//  - edit the last statement/expression in this file
+//  - run cesky.mjs
+
+// Alternative:
+//  - start Node with  `node`
+//  - execute:  let c; import("./cesky.mjs").then((mod)=>c=mod)
+//  - then c.an_exported_function() will work
+
+
 // NODE TO BROWSER
-//  [ ] Use console instead of terminal to report errors.
+//  [x] Use console instead of terminal to report errors.
 //  [ ] Load Node modules dynamically;
 //  [ ] Emulate filesystem for the modules.
 //  [ ] Or use fasl?
 
 // Bugs found using the test suite:
-//   [x] (kernel-eval 'cons) doesn't return the same primitive as a simple `cons` does.
+//   [x] (kernel-eval 'cons) doesn't return the same primitive as `cons` does.
 //       the issue is o_make_kernel_env "remakes" the primitives
 //   [x] string-split:       currently filters out empty strings in result
 //   [ ] string->integer:    find max and min int and rewrite tests
@@ -40,12 +51,30 @@
 // Linting
 //   npx eslint cesky.mjs
 
-import util               from 'node:util'
-import * as fs            from 'node:fs'             // for readFileSync()
-import * as os            from 'node:os'             // for platform()
-import * as path          from 'node:path'           // for isAbsolute()
-import * as child_process from 'node:child_process'  // 
-import { cwd, stdin, stdout, stderr, process }  from 'node:process'
+// From Node:
+//    util.inspect
+//    util.format
+// node:fs
+//   readFileSync,
+//   statSync
+//   lstatSync
+//   constants
+//   openSync
+//   closeSync
+// node:path
+//   isAbsolute  [done]  
+//   join        [done]
+//   relative
+//   basename
+//   dirname
+// node:child_process
+//   spawn    - only used by o_process
+
+
+import * as fs                         from 'node:fs'
+import * as path                       from 'node:path'
+import * as child_process              from 'node:child_process'
+import { cwd, stdin, stdout, stderr }  from 'node:process'
 
 
 // TODO: the last true turns on terminal colors,
@@ -53,6 +82,201 @@ import { cwd, stdin, stdout, stderr, process }  from 'node:process'
 function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
+
+/// PATHS
+
+// Paths are needed to read Rac module paths.
+// We can't rely on the path operations in Node,
+// so we provide our own implementation.
+// We restrict ourselves to Posix paths.
+
+// pathname.
+//   A string that is used to identify a file. It consists of, at most,
+//   {PATH_MAX} bytes, including the terminating null character. It has an
+//   optional beginning slash, followed by zero or more filenames separated
+//   by slashes. If the pathname refers to a directory, it may also have
+//   one or more trailing slashes. Multiple successive slashes are
+//   considered the same as one slash. A pathname that begins with two
+//   successive slashes may be interpreted in an implementation-defined
+//   manner, although more than two leading slashes shall be treated as a
+//   single slash. The interpretation of the pathname is described under
+//   pathname resolution §2.4.
+
+// filename.
+//   A name consisting of 1 to {NAME_MAX} bytes used to name a
+//   file. The characters composing the name may be selected from the
+//   set of all character values excluding the slash character and
+//   the null character. The filenames dot and dot-dot have special
+//   meaning; see pathname resolution §2.4. A filename is sometimes
+//   referred to as a pathname component.
+
+// pathname resolution.
+//     Pathname resolution is performed for a process to resolve a
+//   pathname to a particular file in a file hierarchy. There may be
+//   multiple pathnames that resolve to the same file.
+//     Each filename in the pathname is located in the directory
+//   specified by its predecessor (for example, in the pathname
+//   fragment "a/b", file "b" is located in directory "a"). Pathname
+//   resolution fails if this cannot be accomplished. If the pathname
+//   begins with a slash, the predecessor of the first filename in the
+//   pathname is taken to be the root directory of the process (such
+//   pathnames are referred to as absolute pathnames). If the pathname
+//   does not begin with a slash, the predecessor of the first
+//   filename of the pathname is taken to be the current working
+//   directory of the process (such pathnames are referred to as
+//   relative pathnames).
+//     The interpretation of a pathname component is dependent on the
+//   values of {NAME_MAX} and {_POSIX_NO_TRUNC} associated with the
+//   path prefix of that component. If any pathname component is
+//   longer than {NAME_MAX}, and {_POSIX_NO_TRUNC) is in effect for
+//   the path prefix of that component (see path- conf() §5.7.1), the
+//   implementation shall consider this an error condition. Other-
+//   wise, the implementation shall use the first (NAME_MAX) bytes of
+//   the pathname component.
+//     The special filename, dot, refers to the
+//   directory specified by its predecessor. The special filename,
+//   dot-dot, refers to the parent directory of its predecessor
+//   directory. As a special case, in the root directory, dot-dot may
+//   refer to the root directory itself.
+//     A pathname consisting of a single slash resolves to the root
+//   directory of the process. A null pathname is invalid.
+
+
+// Browser friendly implementations of Node functions
+
+function isAbsolute(strpath) {
+    return strpath[0] === "/"
+}
+
+//function relative(from_path, to_path) {
+//    // Find the relative path between from_path to to_path.
+//}
+
+function join2(normalized_pred, filename) {
+    // filename is ".", ".." or a pathstring
+    // normalized_pred is represented as an array of filenames
+    // mutates normalized_pred
+    let n = normalized_pred.length
+
+    // no predecessors means we have a relative path
+    if (n === 0) {
+        normalized_pred.push(filename)
+        return normalized_pred
+    }
+    // The filename . refers to its predecessor
+    if (filename === ".")
+        return normalized_pred
+    // The .. refers to the parent directory,
+    if (filename === "..") {
+        // except in the root directory, where  .. refers to the root directory
+        if ((normalized_pred[0] === "") && (n===1)) {
+            js_display("skipping /..")
+            return normalized_pred            
+        }
+        // the parent of .. is ../..
+        else if (normalized_pred[n-1] === "..") {
+            normalized_pred.push("..")
+            return normalized_pred
+        } else {
+            normalized_pred.pop()
+            return normalized_pred
+        }
+    } else
+        normalized_pred.push(filename)
+    return normalized_pred    
+}
+        
+export function normalize(path) {
+    // Note: `normalize` removes trailing slashes from `path`.
+    if (path === "") return "."
+    // 1. Multiple successive slashes are considered the same as one slash.
+    path = path.replaceAll(/[/]+/g,"/")  // Replaces //, ///, ... with /
+    // 2. Split path in filenames
+    //   - if path is absolute (begins with a slash),
+    //     then the first filename will empty
+    //   - if the path ends with a slash,
+    //     then the last filename will empty
+    let filenames = path.split("/")
+    let first_filename  = filenames[0]
+    let normalized_pred = [first_filename]
+    let last_filename   = filenames.pop()
+    if (!(last_filename === "")) filenames.push(last_filename)
+    // 3. Join one path segment at time to the normlized path.
+    let i = 0
+    for (let filename_i in filenames) {
+        let filename = filenames[i]
+        if (i > 0) 
+            normalized_pred = join2(normalized_pred, filename)
+        i++
+    }
+    // 4. If there are two or more path segments, separate them with slash.
+    let m = normalized_pred.length
+    if (m === 0)
+        return "."
+    if ((m === 1) && (normalized_pred[0] === ""))
+        return "/"    
+    return normalized_pred.join("/")
+}
+export function join(...paths) {
+    let n = paths.length
+    if (n === 0)
+        return "."
+    if (n === 1)
+        return normalize(paths[0])
+    return normalize(paths.join("/"))
+}
+export function path_dirname(path) {
+    // returns the portion of a pathname before the filename
+    
+    // 1. Strip trailing slashes.
+    path = path.replace(/[/]+$/, "")    
+    // 2. Handle /, //, etc
+    if (path === "")
+        return "/"
+    // 3. Count slashes
+    let count = 0
+    for (let i in path)
+        if (path[i] === "/")
+            count++
+    // 4. Handle no slashes
+    if (count === 0) 
+        return "."
+    // 5. Remove last slash and portion after last slash
+    let before = path.replace(/[/][^/]*$/, "")
+    // 6. Return everything before the last slash (unnormalized)
+    return before
+}
+export function path_basename(path) {
+    // returns filename portion of a pathname
+    
+    // 1. Strip trailing slashes.
+    path = path.replace(/[/]+$/, "")    
+    // 2. Handle /, //, etc
+    if (path === "")
+        return ""
+    // 3. Count slashes
+    let count = 0
+    for (let i in path)
+        if (path[i] === "/")
+            count++
+    // 4. Handle no slashes
+    if (count === 0) 
+        return path
+    // 5. Find portion after last slash
+    //    Note: The last slash can't be the last character,
+    //          since we removed trailing slashes.
+    //          Therefore `after` is non-empty.
+    let after = path.match(/[^/]*$/)[0]    
+    // 6. Return everything after the last slash
+    return after
+}
+function basename(p) {
+    return path_basename(p)
+}
+function dirname(p) {
+    let d = path_dirname(p)
+    return (d === ".") ? false : d
+}
 
 
 // TAGS
@@ -1085,13 +1309,6 @@ function o_build_path2(pre, post) {
 }
 
 
-function basename(p) {
-    return path.basename(p)
-}
-function dirname(p) {
-    let d = path.dirname(p)
-    return (d === ".") ? false : d
-}
 function o_split_path(path) {
     const who = "split-path"
     check_path_string(who, path)
@@ -1473,42 +1690,50 @@ function fprintf(file_handle, format_string, ...arg) {
 
 // ERRORS
 
+function stack_trace() {
+    return "stacktrace: ...todo..."
+}
+
 function fail(msg) {
-    js_display("fail")
-    js_write(msg)
+    msg = "\n" + stack_trace()
     throw new Error(msg)
 }
-function show_err1w(who, str, obj) {
+function msg_err1w(who, str, obj) {
+    // err1w = error, 1 obj, w = write
+    let msg = ""
     if (who !== null)
-        process.stderr.write(who + ": ")
-    process.stderr.write(str + " \n")
-    process.stderr.write(format(obj))
-    process.stderr.write("\n")
+        msg += who + ": "
+    msg += str + ": \n"
+    msg += format(obj, print_mode) + "\n"
 }
 function fail1w(who, str, obj) {
     // error_color();
     show_err1w(who, str, obj)
-    fail("")
+    fail(msg_err1w(who, str, obj))
 }
 function fail1w_errno(who, str, obj, error) {
-    // error_color();
+    // Here `error` is an Error object thrown from e.g. `openFileSync`.
     const msg = error.message
-    show_err1w(who, str, obj)
-    // js_display(" (" + msg + ")")
+    msg += msg_err1w(who, str, obj)
     throw new Error(msg)
 }
-
-
 function fail_arg(who, what, obj) {
-    let not_a = false
-    if ((what[0] === 'a') || (what[0] === 'e') || (what[0] === 'i')
-        || (what[0] === 'o') || (what[0] === 'u'))
-        not_a = "not an "
-    else
-        not_a = "not a "
+    let is_wovel = (["a","e","i","o","u"].includes(what[0]))
+    let not_a = is_wowel ? "not an " :  "not a "
     let msg = format( list(make_string(not_a), make_string(what)),
                       display_mode)
     fail1w(who, string_string(msg), obj)
+}
+function fail_expected1(name, type, value) {
+    let msg = ""
+    msg += name + ":"
+    msg += "  expected: " + type + "\n"
+    msg += "  given:    " + js_format(value)
+    throw new Error(msg)    
+}
+function check(name, typename, predicate, value) {
+    if (!predicate(value)) 
+        fail_expected1(name, typename, value)
 }
 function check_string(name, o) {
     if (!is_string(o))
@@ -1541,7 +1766,6 @@ function check_path_string(who,o) {
     if (o_is_path_string(o) === o_false)
         fail_expected1(who, "path string", o)
 }
-
 function is_input_output_fd(o) {
     if (tag(o) === handle_tag) {
         let s = handle_status(o)
@@ -1551,25 +1775,9 @@ function is_input_output_fd(o) {
     }
     return false
 }
-
-
 function check_input_output_fd(who, handle) {
     if (!is_input_output_fd(handle))
         fail_arg(who, "open input or output file descriptor", handle)
-}
-
-
-function fail_expected1(name, type, value) {
-    console.log(name + ":")
-    console.log("  expected: " + type)
-    js_display("given:")
-    js_write(value)
-    // console.log("  given: " + format(value))
-    throw new Error("^^^^")    
-}
-function check(name, typename, predicate, value) {
-    if (!predicate(value)) 
-        fail_expected1(name, typename, value)
 }
 function panic(msg) {
     throw new Error(msg)
@@ -1578,25 +1786,27 @@ function read_error(msg) {
     throw new Error(msg)
 }
 function error_arity(name, args) {
-    console.log(name + ": arity mismatch")
-    // js_write(args)
-    throw new Error("^^^^")
+    let msg = name + ": arity mismatch"
+    throw new Error(msg)
 }
 function error_arg(name, argument_name, arg) {
-    console.log(name + ": ")
-    console.log("   expected:" + argument_name)
-    console.log("   given:"    + arg)
-    throw new Error("^^^^")
+    let msg = name + ": "
+    msg += "   expected:" + argument_name
+    msg += "   given:"    + arg
+    throw new Error(msg)
 }
 
 
 // TERMINAL SUPPORT
 
+/*
 function is_terminal(fd) {
     return tty.isatty(fd)
 }
 
 tty.isatty(process.stdin.fd)
+*/
+
 
 function get_std_handle(which) {
     if (which === 0)
@@ -4681,13 +4891,6 @@ js_display(format(kernel_eval(parse1('\
 //js_display(format(kernel_eval(parse1(
 //    '(hash-keys (hash-remove (hash \'a 1) \'a))'))))
 
-
-
-
-
-
-
-// js_display(format(kernel_eval(parse1('(eq? (kernel-eval \'cons) cons)'))))
 
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/equal.rac"))'))))
 js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/integer.rac"))'))))

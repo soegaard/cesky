@@ -52,21 +52,24 @@
 //   npx eslint cesky.mjs
 
 // From Node:
-//    util.inspect
-//    util.format
+//    util.inspect  // only used in js_format
+//    util.format   // only used in fprintf
 // node:fs
-//   readFileSync,
-//   statSync
-//   lstatSync
-//   constants
-//   openSync
-//   closeSync
+//   openSync       // fs.openSync(path[, flags[, mode]]) -> fd 
+//   closeSync      // closeSync(fd) -> undefined
+//   readFileSync,  // fs.readFileSync(path[, options]) -> string
+//   statSync       // fs.statSync(path[, options])  -> fs.Stat
+//   lstatSync      // fs.lstatSync(path[, options]) -> fs.Stat
+//   constants      // constants for filesystem operations
+// Above: `fd` is short for file descriptor and is an integer.
+
 // node:path
 //   isAbsolute  [done]  
 //   join        [done]
 //   basename    [done]
 //   dirname     [done]
-//   relative    [done] only the absolute/absolute case
+//   relative    [done] (only the absolute/absolute case)
+
 // node:child_process
 //   spawn    - only used by o_process
 
@@ -82,7 +85,9 @@ function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
 
+///
 /// PATHS
+///
 
 // Paths are needed to read Rac module paths.
 // We can't rely on the path operations in Node,
@@ -326,8 +331,118 @@ function dirname(p) {
     return (d === ".") ? false : d
 }
 
+//
+// FILE SYSTEM
+//
 
+// Node provides `node:fs` for filesystem operations.
+// In the browser, we need provide out own.
+// To make Rac work both on Node and in the Brower, we 
+// provide our own implementations of a mini filesystem.
+
+// node:fs
+//   [done] openSync       // fs.openSync(path[, flags[, mode]]) -> fd 
+//   [done] closeSync      // closeSync(fd) -> undefined
+//   [    ] readFileSync,  // fs.readFileSync(path[, options]) -> string
+//   [    ] statSync       // fs.statSync(path[, options])  -> fs.Stat
+//   [    ] lstatSync      // fs.lstatSync(path[, options]) -> fs.Stat
+//   [    ] constants      // constants for filesystem operations
+
+let browser_cwd = "/"
+let browser_fs  = {foo: ["42"],
+                   bar: ["43"]}
+
+// A file is represented as an array of length one containing a string.
+
+function make_file(contents_as_str)  { return [contents_as_str] }
+function file_contents(file)         { return file[0] }
+function set_file_contents(file,str) { file[0] = str ; return undefined }
+
+// An open file description records the file offset and the file status flags.
+function make_open_file_description(file, offset, status) {
+    return [file, offset, status]
+}
+function ofd_file(ofd)   { return ofd[0] }
+function ofd_offset(ofd) { return ofd[1] }
+function ofd_status(ofd) { return ofd[2] }
+function set_ofd_status(ofd, status) { ofd[2]=status }
+
+let open_files_table = {}  // maps file descriptor to ofd
+let next_fd = 3            
+
+export function fs_openSync(path, flags, mode) {
+    // Returns a filedescriptor (integer) representing the file.
+    // We need to support the "r" and "w" flags.
+    // Other flags like "a" can be added later.
+    if (flags === undefined)
+        flags = "r"
+    if (mode === undefined)
+        mode = 0o666         // 666 octal
+
+    // 1. A relative path is relative to the cwd of the process.
+    path = path_isAbsolute(path) ? normalize(path) : path_join(browser_cwd, path)
+    // in both cases, `path` is normalized
+    
+    // 2. Split the path in filenames.
+    let filenames = path.split("/")
+    filenames.shift()  // First filename is "" due to the initial slash
+    // 3. Find the corresponding directory
+    let dir = browser_fs
+    while (filenames.length > 1) {
+        let subdir = dir[filenames[0]]
+        if (subdir === undefined)
+            throw new Error("fs_openSync (1): No such file: " + path)
+        filenames.shift()
+    }
+    // 4. Find the file
+    let file = dir[filenames[0]]
+    if (file === undefined)
+        throw new Error("fs_openSync (2): No such file: " + path)
+    // 5. Enter the new open file in the open files table
+    //    and return the new file descriptor.
+    let ofd = make_open_file_description(file, 0, "open")
+    let fd = next_fd++
+    open_files_table[fd] = ofd
+    return fd
+}
+export function fs_closeSync(fd) {
+    let ofd = open_files_table[fd]
+    if (ofd === undefined)
+        throw new Error("fs_closeSync: Attempt to close non-open file")
+    set_ofd_status(ofd, "closed")
+    return undefined
+}
+export function fs_readFileSync(path, options) {
+    const who = "fs_readFileSync"
+    // path can either be
+    //   a string   (a path name)
+    //   an integer (a filedescriptor)
+    if (options === undefined)
+        options = null
+    if (options !== null)
+        throw new Error(who + ": internal error: unrecognized option")
+    if (Number.isInteger(path)) {
+        let fd = path
+        return do_fs_readFileSyntax(who, fd)
+    } else if (typeof path === "string") {
+        let fd = fs_openSync(path)
+        let contents = do_fs_readFileSyntax(who, fd)
+        fs_closeSync(fd)
+        return contents
+    }
+}
+function do_fs_readFileSyntax(who, fd) {
+    let ofd = open_files_table[fd]
+    if (ofd === undefined)
+        throw new Error(who + ": not an open file descriptor: " + fd)
+    let file = ofd_file(ofd)
+    return file_contents(file)
+}
+
+
+//
 // TAGS
+//
 
 // Tags are unique values.
 // Any value would work.
@@ -1730,11 +1845,6 @@ function dispatchn(proc, args) {
     return proc(args)
 }
 
-// OUTPUT
-
-function fprintf(file_handle, format_string, ...arg) {
-    file_handle.write( util.format(format_string, ...arg) )
-}
 
 
 // ERRORS
@@ -1868,30 +1978,6 @@ function get_std_handle(which) {
         throw new Error("expected 0, 1, 2")
 }
 
-function print_terminal(which, str) {
-  if (is_terminal(get_std_handle(which))) {
-    fprintf((which === 1) ? stdout : stderr, "%s", str)
-  }
-}
-
-/*
-static void zuo_error_color() {
-  zuo_suspend_signal();
-  zuo_print_terminal(2, "\033[91m");
-}
-
-static void zuo_alert_color() {
-  zuo_suspend_signal();
-  zuo_print_terminal(1, "\033[94m");
-}
-
-static void zuo_normal_color(int which) {
-  zuo_print_terminal(which, "\033[0m");
-  fflush((which == 1) ? stdout : stderr);
-  zuo_resume_signal();
-}
-
-*/
 
 // ERROR PRIMITIVES
 
@@ -1899,26 +1985,24 @@ function fout(file_out, obj, mode) {
     js_display(format(obj, mode))
 }
 
-/*
-function fout(file_out, obj, mode) {
-  out_init(file_out)
-  out(file_out, obj, mode)
-  fwrite(out.s, 1, out.len, fout)
-  out_done(file_out)
-}
-*/
-
 function fprint(  file_out, obj) { fout(file_out, obj, print_mode)   }
 function fdisplay(file_out, obj) { fout(file_out, obj, display_mode) }
 function fwrite(  file_out, obj) { fout(file_out, obj, write_mode)   }
 
+// OUTPUT
+
+function fprintf(file_handle, format_string, ...arg) {
+    file_handle.write( util.format(format_string, ...arg) )
+}
+
 function falert(f, objs) {
     if ( is_pair(objs) && is_string(car(objs)) ) {
-    fdisplay(f, car(objs))
-    objs = cdr(objs)
-    if (objs !== o_null) fprintf(f, ": ")
-  }
-  fdisplay(f, o_tilde_v(objs))
+        fdisplay(f, car(objs))
+        objs = cdr(objs)
+        if (objs !== o_null)
+            fprintf(f, ": ")
+    }
+    fdisplay(f, o_tilde_v(objs))
 }
 function o_error(objs) {
     // error_color()
@@ -3949,20 +4033,20 @@ function make_top_env(mode) {
     
     extend(sym("handle?"),       primitive1("handle?",        o_is_handle))
     // ,
-    extend(sym("fd-open-input"), primitive12("fd-open-input", o_fd_open_input))
+    extend(sym("fd-open-input"), primitive12("fd-open-input",  o_fd_open_input))
     extend(sym("fd-open-output"),primitive12("fd-open-output", o_fd_open_output))
-    extend(sym("fd-close"),      primitive1("fd-close",       o_fd_close))
+    extend(sym("fd-close"),      primitive1("fd-close",        o_fd_close))
 
     // fd-open-close,
-    extend(sym("fd-read"),       primitive2("fd-read",        o_fd_read))
-    extend(sym("fd-write"),      primitive2("fd-write",       o_fd_write))
+    extend(sym("fd-read"),       primitive2("fd-read",         o_fd_read))
+    extend(sym("fd-write"),      primitive2("fd-write",        o_fd_write))
     extend(sym("eof"), o_eof)
     // fd-terminal?, cleanable-file, cleanable-cancel
 
-    extend(sym("stat"),          primitive123("stat",       o_stat))
-    extend(sym("ls"),            primitive1("ls",           o_ls))
+    extend(sym("stat"),          primitive123("stat",          o_stat))
+    extend(sym("ls"),            primitive1("ls",              o_ls))
     // rm, mv,
-    extend(sym("mkdir"),         primitive1("mkdir",        o_mkdir))
+    extend(sym("mkdir"),         primitive1("mkdir",           o_mkdir))
     // rmdir, symlink, readlink, cp,
 
     extend(sym("runtime-env"),   primitive0("runtime-env",    o_runtime_env))

@@ -64,9 +64,9 @@
 // node:path
 //   isAbsolute  [done]  
 //   join        [done]
+//   basename    [done]
+//   dirname     [done]
 //   relative
-//   basename
-//   dirname
 // node:child_process
 //   spawn    - only used by o_process
 
@@ -192,16 +192,23 @@ export function normalize(path) {
     // 1. Multiple successive slashes are considered the same as one slash.
     path = path.replaceAll(/[/]+/g,"/")  // Replaces //, ///, ... with /
     // 2. Split path in filenames
+    let filenames = path.split("/")
+    // 3. Discard any .,  ./., ././. etc from the beginning of the path.
+    while ((filenames.length > 0) && (filenames[0] === ".")) {
+        filenames.shift()
+    }
+    if (filenames.length === 0)
+        return "."    
+    // 4.  Handle slashes at the beginning and end
     //   - if path is absolute (begins with a slash),
-    //     then the first filename will empty
+    //     then the first filename will be the empty string
     //   - if the path ends with a slash,
     //     then the last filename will empty
-    let filenames = path.split("/")
     let first_filename  = filenames[0]
     let normalized_pred = [first_filename]
     let last_filename   = filenames.pop()
     if (!(last_filename === "")) filenames.push(last_filename)
-    // 3. Join one path segment at time to the normlized path.
+    // 5. Join one path segment at time to the normalized path.
     let i = 0
     for (let filename_i in filenames) {
         let filename = filenames[i]
@@ -209,15 +216,16 @@ export function normalize(path) {
             normalized_pred = join2(normalized_pred, filename)
         i++
     }
-    // 4. If there are two or more path segments, separate them with slash.
+    // 6. If there are two or more path segments, separate them with slash.
     let m = normalized_pred.length
     if (m === 0)
         return "."
     if ((m === 1) && (normalized_pred[0] === ""))
-        return "/"    
+        return "/"
+    
     return normalized_pred.join("/")
 }
-export function join(...paths) {
+export function path_join(...paths) {
     let n = paths.length
     if (n === 0)
         return "."
@@ -1296,12 +1304,13 @@ function o_build_path2(pre, post) {
     // path.join normalizes and returns "." to signal current directory
     let pre_str    = string_string(pre)
     let post_str   = string_string(post)
-    let joined     = path.join( pre_str, post_str )
+    let joined     = path_join( pre_str, post_str )
     let last       = joined.substr(-1)
     let last_post  = post_str.substr(-1)
     let last2_post = post_str.substr(-2)
-    let end_sep    =     ((last === "/") || (last       === "."))  ?  ""
-        :  (((last_post === "/") || (last2_post === "..")) ? "/" : "")
+    let end_sep    =     ((last === "/") || (last       === "."))  ? ""
+                :  (((last_post === "/") || (last2_post === "..")) ? "/" 
+                : "")
     if (path.isAbsolute(pre_str) && path.isAbsolute(post_str))
         return make_string( path.relative(pre_str, post_str) )
     else

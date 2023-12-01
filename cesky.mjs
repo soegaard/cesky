@@ -73,17 +73,68 @@
 // node:child_process
 //   spawn    - only used by o_process
 
+///
+/// Imported Moudules
+///
 
-import * as fs                         from 'node:fs'
-import * as child_process              from 'node:child_process'
-import { cwd, stdin, stdout, stderr }  from 'node:process'
+// Since we want the interpreter to run both in the terminal (via Node)
+// and in the browser, we:
+//   - limit external modules to a minimum
+//   - load modules dynamically
+//   - provide implementations for the browser for all used Node modules
 
+
+// Filesystem 'node:fs'
+let fs
+if (typeof window === "undefined") {
+    fs = await import("node:fs")
+} else {
+    fs = {openSync:     fs_openSync,
+          closeSync:    fs_closeSync,
+          readFileSync: fs_readFileSync}
+}
+
+// Process 'node:process'
+let process
+if (typeof window === "undefined") {
+    process = await import("node:process")
+} else {
+    process = {stdin:   "todo: implement stdin for browser",
+               stdout:  "todo: implement stdout for browser",
+               stderr:  "todo: implement stderr for browser",
+               cwd:     "todo: implement cwd for browser"}
+}
+
+// Child Process (only for spawn, which runs an OS command in a new process.
+// - not needed for the browser
+let child_process
+if (typeof window === "undefined") {
+    child_process = await import("node:child_process")
+} else {
+    child_process = {spawn: (() => {throw new Error("spawn: not implemented for the browser")})}
+}
+
+// Util
+let util
+if (typeof window === "undefined") {
+    util = await import("node:util")
+} else {
+    // Note: functions is worse than Node's util.inspect
+    util = {inspect: (object) => { return JSON.stringify() }}
+}
+
+
+///
+/// Formatting and debugging output
+///
 
 // TODO: the last true turns on terminal colors,
 //       turn them off, when writing to a file
+
 function js_format(x)  { return util.inspect(x,false,null,true) }
 function js_write(x)   { console.log(js_format(x)) }
 function js_display(x) { console.log(x) }
+
 
 ///
 /// PATHS
@@ -343,7 +394,7 @@ function dirname(p) {
 // node:fs
 //   [done] openSync       // fs.openSync(path[, flags[, mode]]) -> fd 
 //   [done] closeSync      // closeSync(fd) -> undefined
-//   [    ] readFileSync,  // fs.readFileSync(path[, options]) -> string
+//   [done] readFileSync,  // fs.readFileSync(path[, options]) -> string
 //   [    ] statSync       // fs.statSync(path[, options])  -> fs.Stat
 //   [    ] lstatSync      // fs.lstatSync(path[, options]) -> fs.Stat
 //   [    ] constants      // constants for filesystem operations
@@ -2006,14 +2057,14 @@ function falert(f, objs) {
 }
 function o_error(objs) {
     // error_color()
-    falert(stderr, objs)
+    falert(process.stderr, objs)
     js_write(objs)
     fail("")
     return o_undefined
 }
 function o_alert(objs) {
     // alert_color()
-    falert(stdout, objs)
+    falert(process.stdout, objs)
     // fprintf(stdout, "\n")
     // normal_color(1)
     return o_void
@@ -3373,6 +3424,9 @@ function get_env_as_trie() {
 
 let o_the_runtime_env = make_empty_trie()
 // current working directory
+js_write("there")
+js_write(process)
+js_write(process.cwd)
 o_the_runtime_env = o_trie_set(o_the_runtime_env, sym("dir"),
                                make_string(process.cwd()))
 // arguments without executable and without script name

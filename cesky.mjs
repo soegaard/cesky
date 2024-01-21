@@ -1,5 +1,7 @@
 // CEK-interpreter in ES6 JavaScript
 
+// Note: CompressionStream is available in Node.js in version >= 18.0.
+
 // HOW TO USE CESKY IN THE REPL
 //  - edit the last statement/expression in this file
 //  - run cesky.mjs
@@ -12,7 +14,7 @@
 
 // NODE TO BROWSER
 //  [x] Use console instead of terminal to report errors.
-//  [ ] Load Node modules dynamically;
+//  [x] Load Node modules dynamically;
 //  [ ] Emulate filesystem for the modules.
 //  [ ] Or use fasl?
 
@@ -74,6 +76,12 @@
 //   spawn    - only used by o_process
 
 ///
+/// The rac library might be embedded in the source file.
+/// If so the variable
+
+let lib_json = false
+
+///
 /// Imported Moudules
 ///
 
@@ -120,7 +128,9 @@ if (typeof window === "undefined") {
     util = await import("node:util")
 } else {
     // Note: functions is worse than Node's util.inspect
-    util = {inspect: (object) => { return JSON.stringify() }}
+    util = {inspect: (object) => { return JSON.stringify() },
+            format:  (object) => { throw new Error("format: not implemented for the browser")}
+           }
 }
 
 
@@ -5128,8 +5138,6 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro-hygi
 //(require "macro-hygienic.rac")
 
 
-
-
 //js_display(format(kernel_eval(parse1(
 //    '(hash-keys-subset? (hash-remove (hash (quote a) 1) (quote a)) (hash) )'))))
 //js_display(format(kernel_eval(parse1(
@@ -5140,3 +5148,166 @@ js_display(format(kernel_eval(parse1('(hash-keys (module->hash "tests/macro-hygi
 // js_write(o_kernel_env())
 //js_write(o_hash_ref(o_kernel_env(), sym("car")))
 //js_write(o_top_env)
+
+function list_files(dir_path) {
+    try {
+        let dir = fs.opendirSync(dir_path, {recursive: true} )
+        let entries = []
+        let i = 0
+        let loop_done = false
+        for (let entry = dir.readSync(); entry !== null; entry = dir.readSync()) {
+            entries[i++] = entry
+        }
+        dir.closeSync()
+        return entries
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+function list_files_rec(dir_path) {
+    let base      = dir_path
+    let des       = list_files(base)
+    let all_files = []
+    js_display("list_files_rec")
+    js_display("dir_path")
+    js_write(dir_path)
+    js_display("des")
+    js_write(des)
+    return handle_dir_entries(base, des, all_files)
+}
+
+function handle_dir_entries(base, des, all_files) {
+    // put all files in `all_files`
+    
+    // js_display("handle_dir_entries")
+    // js_display("base")
+    // js_write(base)
+    // js_display("all_files")
+    // js_write(all_files)
+    while (des.length > 0) {
+        let de = des.pop()
+        if (de.isDirectory()) {
+            // js_display("dir:")
+            // js_write(de.path)
+            let sub_des = list_files(de.path)
+            // js_display("sub_des")
+            // js_write(sub_des)
+            handle_dir_entries(de.path, sub_des, all_files)
+        } else if (de.isFile()) {
+            // js_display("file:")
+            // js_write(base + "/" + de.name)
+            if (de.name.match(/[.]rac$/) !== null)
+                all_files.push(base + "/" + de.name)
+        } else {
+            // js_display("mumble:")
+            // js_write(de.path)
+            // js_write(de.name)
+        }
+    }
+    return all_files
+}
+
+function read_files(files) {
+    // Returns object where
+    // the properties are file paths
+    // and the values are strings.
+    let files_and_contents = {}
+    for (const file of files) {
+        let contents = file_to_string(file.path)
+        files_and_contents[file] = [file.path, contents]
+    }
+    return files_and_contents
+}
+
+function files_to_json(dir_path) {
+    return JSON.stringify(read_files(list_files_rec(dir_path)))
+}
+
+function save_files_to_json_file(dir_path, out_file) {
+    let json = files_to_json(dir_path)
+    fs.writeFileSync(out_file, json)
+}
+
+/*
+function compress(string, encoding) {
+  const byteArray = new TextEncoder().encode(string);
+  const cs = new CompressionStream(encoding);
+  const writer = cs.writable.getWriter();
+  writer.write(byteArray);
+  writer.close();
+  return new Response(cs.readable).arrayBuffer();
+}
+
+function decompress(byteArray, encoding) {
+  const cs = new DecompressionStream(encoding);
+  const writer = cs.writable.getWriter();
+  writer.write(byteArray);
+  writer.close();
+  return new Response(cs.readable).arrayBuffer().then(function (arrayBuffer) {
+    return new TextDecoder().decode(arrayBuffer);
+  });
+}
+*/
+
+function gzip_string(string) {
+  const bytes  = new TextEncoder().encode(string)
+  const cs     = new CompressionStream("gzip")
+  const writer = cs.writable.getWriter()
+  writer.write(bytes)
+  writer.close()
+  return new Response(cs.readable).arrayBuffer()
+}
+
+
+let base = "lib"        
+let des = list_files(base)
+let out_json = "rac-lib.json"
+
+// js_write(des)
+
+// js_display("all files")
+// js_write(files_to_json(base))
+// save_files_to_json_file(base, out_json)
+
+//js_write(gzip_string("Hello World!"))
+
+
+function generate_cesky_with_lib() {
+    const source_cesky        = "cesky.mjs"
+    const source_lib_json     = "lib.json"
+    const dest_cesky_with_lib = "cesky-with-lib.mjs"
+
+    // 1. Read source files
+
+    let str_cesky 
+    let str_lib_json
+
+    try { str_cesky = file_to_string(source_cesky) }
+    catch (error) {
+        js_display("generate_cesky_with_lib: \n  unable to read: '" + source_cesky +"'\n")
+        js_write(error)
+        return
+    }
+    try { str_lib_json = file_to_string(source_lib_json) }
+    catch (error) {
+        js_display("generate_cesky_with_lib: \n  unable to read: '" + source_lib_json +"'\n")
+        js_write(error)
+        return
+    }
+                   
+    // 2. Generate contents
+    
+    let contents = str_cesky + "lib_json = " + str_lib_json
+
+    // 3. Write contents to destination
+    
+    try { fs.writeFileSync(dest_cesky_with_lib, contents) }
+    catch (error) {
+        js_display("generate_cesky_with_lib: \n  unable to write to: '" + dest_cesky_with_lib +"'\n")
+        js_write(error)
+    }        
+        
+}
+
+generate_cesky_with_lib()

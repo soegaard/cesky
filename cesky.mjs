@@ -81,8 +81,11 @@
 
 let lib_json = false
 
+const lib_json_regexp = /let lib_json = false/
+// This regexp needs to match the line above. See `generate_cesky_with_lib()`.
+
 ///
-/// Imported Moudules
+/// Imported Modules
 ///
 
 // Since we want the interpreter to run both in the terminal (via Node)
@@ -5298,7 +5301,8 @@ function generate_cesky_with_lib() {
                    
     // 2. Generate contents
     
-    let contents = str_cesky + "lib_json = " + str_lib_json
+    let contents = str_cesky
+    contents = contents.replace(lib_json_regexp, "let lib_json = " + str_lib_json)
 
     // 3. Write contents to destination
     
@@ -5310,4 +5314,7 @@ function generate_cesky_with_lib() {
         
 }
 
-generate_cesky_with_lib()
+if (lib_json == false) {
+    js_display("Generating 'cesky-with-lib.mjs'")
+    generate_cesky_with_lib()
+}
